@@ -113,23 +113,29 @@
         <div class="panel">
           <div class="badge" id="scoreBadge">Score: 0</div>
           <div class="badge" id="fishBadge">🐟 0</div>
+          <div class="badge" id="stompBadge">🐾 0</div>
         </div>
         <div class="panel">
           <div class="badge" id="bestBadge">Best: 0</div>
           <div class="badge" id="speedBadge">Speed: 36</div>
         </div>
       </div>
-      <div class="title">SPACE = jump · DOWN = duck · R = restart · ESC = pause</div>
+      <div class="title">SPACE / ↑ = jump · ↓ = duck · A · D = run · jump on enemies to STOMP! · R = restart · ESC = pause</div>
       <div class="overlay" id="overlay">
         <div class="card">
           <h1>🐱 Annabelle's Cat Runner</h1>
           <p>Help the orange tabby outrun the neighborhood!</p>
           <p>Grab fish 🐟, dodge dogs 🐶, rocks 🪨 and birds 🐦.</p>
+          <p><b>Jump ON an enemy to STOMP it!</b> +50 points 🐾</p>
           <div class="keys">
             <span class="key">SPACE</span>
             <span class="key">↑</span>
             <span class="key">W</span>
             <span class="key">Jump</span>
+            <span class="key">A</span>
+            <span class="key">D</span>
+            <span class="key">←→</span>
+            <span class="key">Run</span>
             <span class="key">↓</span>
             <span class="key">S</span>
             <span class="key">Duck</span>
@@ -190,6 +196,7 @@ const world = {
   maxScrollSpeed: 760,
   distance: 0,
   fish: 0,
+  stomps: 0,                   // how many enemies the cat squished
   best: Number(localStorage.getItem('annabelle-cat-best') || 0),
   shake: 0,
   flash: 0,
@@ -205,9 +212,20 @@ const world = {
 /* ---------- Entities ---------- */
 const cat = {
   x: 140, y: GROUND_Y - 70, w: 70, h: 70,
-  vy: 0, onGround: true, duck: false,
+  vx: 0, vy: 0,                // horizontal + vertical velocity (Mario-like air control)
+  onGround: true, duck: false,
+  facing: 1,                  // 1 = right, -1 = left (sprite faces right by default)
+  squash: 0,                  // stomp-squash timer (0..1, 0 = full size, 1 = flat)
+  invincible: 0,              // stomp-bounce invincibility timer (seconds)
   anim: 0, blink: 0, blinking: false,
 };
+/* horizontal tuning — feel snappy like Mario */
+const CAT_GROUND_SPEED = 380;   // px/sec when running on ground
+const CAT_AIR_SPEED    = 280;   // px/sec when drifting in air (slightly less = floaty)
+const CAT_ACCEL        = 1800;  // how fast we reach target speed
+const CAT_FRICTION     = 1400;  // ground friction (only when no horizontal input)
+const CAT_MIN_X        = 30;    // left wall (don't fall off screen)
+const CAT_MAX_X        = 640;   // right wall (don't run off the right edge — obstacles still scroll in)
 const obstacles = [];   // dogs, rocks, birds
 const pickups   = [];   // fish
 const clouds    = [];
@@ -285,10 +303,22 @@ const sfx = {
   coin:  () => { beep(880, 0.07, 'square', 0.14); setTimeout(() => beep(1320, 0.09, 'square', 0.14), 60); },
   hit:   () => { beep(180, 0.25, 'sawtooth', 0.22, -120); setTimeout(() => beep(90, 0.3, 'sawtooth', 0.18, -40), 100); },
   point: () => beep(660, 0.08, 'triangle', 0.14),
+  stomp: () => { beep(700, 0.07, 'square', 0.18, -100); setTimeout(() => beep(420, 0.10, 'square', 0.16, 60), 50); },
+  land:  () => beep(180, 0.04, 'triangle', 0.10),
 };
 
 /* ---------- Game actions ---------- */
 function catJump() { if (cat.onGround) { cat.vy = -780; cat.onGround = false; sfx.jump(); } }
+/* mid-air variable-jump: if you release jump while still rising, cut the velocity */
+function cutJump() { if (!cat.onGround && cat.vy < -200) cat.vy = -200; }
+/* move cat left/right with air control. dir = -1 or +1. air = bool. */
+function catMove(dir, air) {
+  const target = (air ? CAT_AIR_SPEED : CAT_GROUND_SPEED) * dir;
+  // accelerate toward target
+  if (dir !== 0) cat.facing = dir;
+  if (cat.vx < target)      cat.vx = Math.min(target, cat.vx + CAT_ACCEL * (1/60));
+  else if (cat.vx > target) cat.vx = Math.max(target, cat.vx - CAT_ACCEL * (1/60));
+}
 function startGame() {
   world.started = true; world.over = false;
   document.getElementById('overlay').classList.add('hidden');
@@ -297,12 +327,15 @@ function startGame() {
 function restart() { reset(); world.started = true; world.over = false; document.getElementById('overlay').classList.add('hidden'); }
 function reset() {
   world.scrollSpeed = world.baseScrollSpeed;
-  world.distance = 0; world.fish = 0;
+  world.distance = 0; world.fish = 0; world.stomps = 0;
   world.spawnTimer = 1.0; world.spawnInterval = 1.4;
   world.shake = 0; world.flash = 0;
   obstacles.length = 0; pickups.length = 0;
   particles.length = 0; pops.length = 0;
-  cat.x = 140; cat.y = GROUND_Y - 70; cat.vy = 0; cat.onGround = true; cat.duck = false;
+  cat.x = 140; cat.y = GROUND_Y - 70;
+  cat.vx = 0; cat.vy = 0;
+  cat.onGround = true; cat.duck = false;
+  cat.facing = 1; cat.squash = 0; cat.invincible = 0;
 }
 
 function gameOver() {
@@ -318,7 +351,7 @@ function gameOver() {
     o.classList.remove('hidden');
     o.querySelector('.card').innerHTML = `
       <h1>💥 Game Over</h1>
-      <p>Score: <b>${score}</b> &nbsp; 🐟 ${world.fish}</p>
+      <p>Score: <b>${score}</b> &nbsp; 🐟 ${world.fish} &nbsp; 🐾 ${world.stomps}</p>
       <p>Best: <b>${world.best}</b></p>
       <p>Press SPACE, R, or click PLAY to try again.</p>
       <button class="btn" id="startBtn">▶ PLAY AGAIN</button>
@@ -327,7 +360,7 @@ function gameOver() {
   }, 350);
 }
 
-function scoreVal() { return Math.floor(world.distance) + world.fish * 25; }
+function scoreVal() { return Math.floor(world.distance) + world.fish * 25 + world.stomps * 50; }
 
 /* ---------- Spawning ---------- */
 function spawnObstacle() {
@@ -386,15 +419,50 @@ function update(now) {
   /* input */
   cat.duck = keys.has('arrowdown') || keys.has('s');
   if ((keys.has(' ') || keys.has('arrowup') || keys.has('w')) && cat.onGround) catJump();
+  // release-jump: cut the jump short if you let go while still going up
+  if (cat.invincible <= 0) {  // stomp bounce shouldn't be cut short
+    const stillHolding = keys.has(' ') || keys.has('arrowup') || keys.has('w');
+    if (!stillHolding) cutJump();
+  }
+  // horizontal input (Mario-like: full control on ground AND in air)
+  const leftHeld  = keys.has('arrowleft')  || keys.has('a');
+  const rightHeld = keys.has('arrowright') || keys.has('d');
+  const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
+  if (moveDir !== 0) catMove(moveDir, !cat.onGround);
 
   /* physics */
   cat.anim += dt * 14;
   cat.blink -= dt;
   if (cat.blink <= 0) { cat.blinking = true; cat.blink = 0.12; }
   else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
-  if (!cat.onGround) { cat.vy += 1800 * dt; cat.y += cat.vy * dt; }
-  const h = cat.duck ? cat.h * 0.6 : cat.h;
-  if (cat.y + h >= GROUND_Y) { cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true; }
+
+  // gravity (lighter while invincible for that floaty-bounce feel)
+  const grav = (cat.invincible > 0) ? 900 : 1800;
+  // remember the previous-frame bottom of the cat for stomp detection
+  // (must be sampled BEFORE we move it, otherwise the side-bump path always wins)
+  const _prevY = cat.y;
+  if (!cat.onGround) { cat.vy += grav * dt; cat.y += cat.vy * dt; }
+
+  // horizontal friction when no input on the ground
+  if (cat.onGround && moveDir === 0) {
+    if (cat.vx > 0)      cat.vx = Math.max(0, cat.vx - CAT_FRICTION * dt);
+    else if (cat.vx < 0) cat.vx = Math.min(0, cat.vx + CAT_FRICTION * dt);
+  }
+  // apply horizontal velocity
+  cat.x += cat.vx * dt;
+
+  // wall clamps (so the cat can't run off the left/right of the screen)
+  if (cat.x < CAT_MIN_X)             { cat.x = CAT_MIN_X; cat.vx = 0; }
+  if (cat.x + cat.w > CAT_MAX_X)     { cat.x = CAT_MAX_X - cat.w; cat.vx = 0; }
+
+  // (ground clamp intentionally moved to AFTER the obstacle collision loop,
+  //  so a stomp can lift the cat into the air before it would otherwise snap
+  //  to the floor and turn a stomp into a side-bump game-over)
+  cat.onGround = false;
+
+  // decay timers
+  if (cat.squash > 0)     cat.squash = Math.max(0, cat.squash - dt * 2.2);
+  if (cat.invincible > 0) cat.invincible = Math.max(0, cat.invincible - dt);
 
   /* difficulty ramp */
   const t = Math.min(1, world.distance / 4000);
@@ -409,15 +477,49 @@ function update(now) {
   for (const h of hills)  { h.x -= world.scrollSpeed * 0.35 * dt; if (h.x + h.w < -50) { h.x = W + rand(0, 300); h.w = rand(180, 340); h.h = rand(60, 140); } }
   for (const g of grass)  { g.x -= world.scrollSpeed * 0.9  * dt; if (g.x < -10) g.x = W + rand(0, 100); }
 
-  /* move + collide obstacles */
-  for (let i = obstacles.length - 1; i >= 0; i--) {
+  /* move obstacles horizontally first (so the cat-vs-rock overlap is consistent
+     with what the stomp check sees this frame) */
+  for (let i = 0; i < obstacles.length; i++) {
     const o = obstacles[i];
     o.x -= world.scrollSpeed * dt;
     if (o.kind === 'bird') { o.y += Math.sin((o.phase += dt * 8)) * 0.6; }
+  }
+
+  /* ground clamp is moved AFTER obstacle collision, so a stomp can lift the cat
+     back into the air before it gets snapped to the floor */
+
+  /* collide + stomp check (Mario-style) */
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
     if (o.x + o.w < -20) { obstacles.splice(i, 1); continue; }
     const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
     const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+
     if (rectsOverlap(cat.x, catY, catW, catH, o.x, o.y, o.w, o.h)) {
+      // Mario-style stomp check: cat was above the obstacle's top last frame AND is falling.
+      // Use the REAL previous-frame y (sampled before gravity ran) so a side-bump
+      // doesn't masquerade as a stomp.
+      const catBottom    = catY + catH;
+      const prevCatBottom = _prevY + catH;
+      const wasAbove     = prevCatBottom <= o.y + 4;       // small tolerance
+      const isFalling    = cat.vy > 50;
+      if (cat.invincible <= 0 && isFalling && wasAbove) {
+        // STOMP! Kill the obstacle, bounce the cat, +50 score, juicy feedback
+        obstacles.splice(i, 1);
+        world.stomps++;
+        cat.vy = -520;             // bounce up
+        cat.onGround = false;
+        cat.squash = 1.0;          // squash the cat on next landing
+        cat.invincible = 0.35;     // brief i-frames so you don't insta-rehit
+        // gold + sparkle particles burst from the squished enemy
+        for (let k = 0; k < 22; k++) particles.push(makeParticle(o.x + o.w/2, o.y + o.h/2, 'gold'));
+        popText('STOMP!', o.x + o.w/2, o.y - 8, '#ffd86b');
+        popText('+50',    o.x + o.w/2, o.y + 18, '#ffae3d');
+        sfx.stomp();
+        world.shake = 0.12;        // tiny screen-shake for impact
+        continue;
+      }
+      // otherwise: side-bump = death (but ducking still passes birds)
       if (!(cat.duck && o.duckable)) gameOver();
     }
   }
@@ -437,6 +539,15 @@ function update(now) {
       popText('+1', cat.x + 30, cat.y - 10, '#ffd86b');
       sfx.coin();
     }
+  }
+
+  /* NOW clamp the cat to the ground (after all collision checks so stomps
+     have a chance to lift the cat into the air before it gets snapped down) */
+  const h = cat.duck ? cat.h * 0.6 : cat.h;
+  if (cat.y + h >= GROUND_Y) {
+    const wasInAir = !cat.onGround;
+    cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true;
+    if (wasInAir && cat.squash > 0.6) { sfx.land(); }
   }
 
   /* particles */
@@ -464,6 +575,7 @@ function update(now) {
   /* HUD */
   document.getElementById('scoreBadge').textContent = 'Score: ' + scoreVal();
   document.getElementById('fishBadge').textContent  = '🐟 ' + world.fish;
+  document.getElementById('stompBadge').textContent = '🐾 ' + world.stomps;
   document.getElementById('bestBadge').textContent  = 'Best: ' + world.best;
   document.getElementById('speedBadge').textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
 
@@ -524,11 +636,32 @@ function lerpColor(a, b, t) {
 
 function drawCat() {
   const ducking = cat.duck;
-  const h = ducking ? cat.h * 0.6 : cat.h;
+  let h = ducking ? cat.h * 0.6 : cat.h;
   const x = cat.x|0, y = (ducking ? cat.y + cat.h * 0.4 : cat.y)|0;
 
-  /* shadow */
+  // Stomp-squash: flatten the cat vertically while keeping width
+  let yStretch = 1, xStretch = 1, yOffset = 0;
+  if (cat.squash > 0) {
+    yStretch = 1 - 0.55 * cat.squash;     // compress height
+    xStretch = 1 + 0.20 * cat.squash;     // bulge width
+    yOffset  = (h - h * yStretch) | 0;    // grow downward to keep feet on the ground
+    h = (h * yStretch) | 0;
+  }
+  // invincibility flash: blink the cat on/off quickly
+  const flashOn = (cat.invincible > 0) ? (Math.floor(performance.now() / 60) % 2 === 0) : true;
+  // facing: flip the whole sprite horizontally when cat.facing === -1
+  const flip = cat.facing === -1;
+
+  /* shadow (no flip — shadow lives on the ground) */
   px(x + 6, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 12, 5, 'rgba(0,0,0,.18)');
+  if (!flashOn) {
+    // when flashing off, just draw a yellow silhouette so the player still knows where the cat is
+    const sw = ((cat.w - 8) * xStretch) | 0;
+    const sh = ((h - 22)   * 1) | 0;
+    const sx = (x + 4 + ((cat.w - 8) - sw) / 2) | 0;
+    px(sx, y + 22 + yOffset, sw, sh, flip ? 'rgba(255,200,80,.6)' : 'rgba(255,200,80,.6)');
+    return;
+  }
 
   const body  = '#ffa55a';
   const belly = '#ffdcb4';
@@ -536,58 +669,67 @@ function drawCat() {
   const eye   = '#78dc3c';
   const nose  = '#dc5a82';
 
+  // helper: place a rect, optionally flipped on X. xStretch / yStretch resize from the top-left.
+  function p(px0, py0, pw, ph, color) {
+    if (!flip) { px(x + px0, y + py0 + yOffset, (pw * xStretch)|0, (ph * yStretch)|0, color); return; }
+    // mirrored: distance from right edge of the cat body
+    const mirrored = (cat.w - 1) - (px0 + pw);
+    const w2 = (pw * xStretch)|0;
+    px(x + mirrored + ((pw * xStretch - w2) / 2 | 0), y + py0 + yOffset, w2, (ph * yStretch)|0, color);
+  }
+
   if (!ducking) {
     /* body */
-    px(x + 10, y + 22, cat.w - 20, cat.h - 32, body);
+    p(10, 22, cat.w - 20, cat.h - 32, body);
     /* head */
-    px(x + 4, y, cat.w - 8, 32, body);
+    p(4, 0, cat.w - 8, 32, body);
     /* ears */
-    px(x + 6, y - 12, 14, 16, body);
-    px(x + cat.w - 20, y - 12, 14, 16, body);
-    px(x + 9, y - 6, 8, 8, '#ff82a0');
-    px(x + cat.w - 17, y - 6, 8, 8, '#ff82a0');
+    p(6, -12, 14, 16, body);
+    p(cat.w - 20, -12, 14, 16, body);
+    p(9, -6, 8, 8, '#ff82a0');
+    p(cat.w - 17, -6, 8, 8, '#ff82a0');
     /* eyes — green like the sticker */
-    const eyeY = y + 8;
+    const eyeY = 8;
     if (cat.blinking) {
-      px(x + 14, eyeY + 1, 8, 2, '#000');
-      px(x + cat.w - 22, eyeY + 1, 8, 2, '#000');
+      p(14, eyeY + 1, 8, 2, '#000');
+      p(cat.w - 22, eyeY + 1, 8, 2, '#000');
     } else {
-      px(x + 14, eyeY, 8, 6, eye);
-      px(x + cat.w - 22, eyeY, 8, 6, eye);
-      px(x + 17, eyeY + 1, 3, 4, '#000');
-      px(x + cat.w - 19, eyeY + 1, 3, 4, '#000');
-      px(x + 19, eyeY + 1, 1, 1, '#fff');
-      px(x + cat.w - 17, eyeY + 1, 1, 1, '#fff');
+      p(14, eyeY, 8, 6, eye);
+      p(cat.w - 22, eyeY, 8, 6, eye);
+      p(17, eyeY + 1, 3, 4, '#000');
+      p(cat.w - 19, eyeY + 1, 3, 4, '#000');
+      p(19, eyeY + 1, 1, 1, '#fff');
+      p(cat.w - 17, eyeY + 1, 1, 1, '#fff');
     }
     /* nose */
-    px(x + cat.w/2 - 2, y + 18, 4, 3, nose);
-    px(x + cat.w/2, y + 21, 6, 1, dark);
-    px(x + cat.w/2 - 6, y + 21, 6, 1, dark);
+    p(cat.w/2 - 2, 18, 4, 3, nose);
+    p(cat.w/2, 21, 6, 1, dark);
+    p(cat.w/2 - 6, 21, 6, 1, dark);
     /* whiskers */
-    px(x + 2, y + 19, 8, 1, dark);
-    px(x + 2, y + 22, 8, 1, dark);
-    px(x + cat.w - 10, y + 19, 8, 1, dark);
-    px(x + cat.w - 10, y + 22, 8, 1, dark);
+    p(2, 19, 8, 1, dark);
+    p(2, 22, 8, 1, dark);
+    p(cat.w - 10, 19, 8, 1, dark);
+    p(cat.w - 10, 22, 8, 1, dark);
     /* belly */
-    px(x + 18, y + 32, cat.w - 36, cat.h - 38, belly);
+    p(18, 32, cat.w - 36, cat.h - 38, belly);
     /* legs (run anim) */
-    const legY = y + cat.h - 18;
+    const legY = cat.h - 18;
     const off  = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 0;
-    px(x + 16 + off, legY, 8, 18, body);
-    px(x + cat.w - 24 - off, legY, 8, 18, body);
+    p(16 + off, legY, 8, 18, body);
+    p(cat.w - 24 - off, legY, 8, 18, body);
     /* tail */
     const tw = Math.round(Math.sin(cat.anim) * 6);
-    px(x + cat.w - 6, y + 24 + tw, 12, 8, body);
-    px(x + cat.w - 2, y + 18 + tw, 8, 10, body);
+    p(cat.w - 6, 24 + tw, 12, 8, body);
+    p(cat.w - 2, 18 + tw, 8, 10, body);
   } else {
-    /* ducking */
-    const dy = cat.y + cat.h * 0.66;
-    px(x + 8, dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
-    px(x + 4, dy - 4, cat.w - 8, 16, body);
-    px(x + 8, dy - 10, 8, 8, body);
-    px(x + cat.w - 16, dy - 10, 8, 8, body);
-    px(x + cat.w - 18, dy + 1, 6, 4, eye);
-    px(x + cat.w - 16, dy + 2, 2, 2, '#000');
+    /* ducking — small low-profile cat, also flips */
+    const dy = 46; // approx (cat.h * 0.66) relative to y
+    p(8,  dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
+    p(4,  dy - 4, cat.w - 8,  16, body);
+    p(8,  dy - 10, 8, 8, body);
+    p(cat.w - 16, dy - 10, 8, 8, body);
+    p(cat.w - 18, dy + 1, 6, 4, eye);
+    p(cat.w - 16, dy + 2, 2, 2, '#000');
   }
 }
 
@@ -711,9 +853,12 @@ requestAnimationFrame(update);
 window.__catRunner = {
   start: startGame,
   restart,
-  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, best: world.best }),
+  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, stomps: world.stomps, best: world.best }),
   jump: catJump,
 };
+window.__cat = cat;        // read-only debug hook for tests
+window.__world = world;
+window.__obstacles = obstacles;
 </script>
 </body>
 </html>
