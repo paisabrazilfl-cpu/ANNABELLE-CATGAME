@@ -121,6 +121,8 @@ async function waitForServer(port, timeout = 5000) {
 
   // Test 4: jump buffer — set cat to be falling just above a platform, with a
   // queued jump, and verify the jump fires on landing.
+  // We sample RIGHT AFTER the cat would land (within 30ms) to catch the jump
+  // mid-arc, before the cat comes back down to the platform.
   await page.evaluate(() => {
     const p = window.__platforms[3];
     window.__cat.x = p.x + 20;
@@ -128,13 +130,15 @@ async function waitForServer(port, timeout = 5000) {
     window.__cat.vy = 100;                       // falling
     window.__cat.onGround = false;
     window.__cat.coyoteTime = 0;
-    window.__cat.jumpBuffer = 0.10;              // queued jump (would normally be set by Space press)
+    window.__cat.jumpBuffer = 0.10;              // queued jump
   });
-  await page.waitForTimeout(80);                 // land + buffer expires + jump fires
+  await page.waitForTimeout(110);                // cat lands (~60ms) + jump fires + arcs up a bit
   const afterBuffer = await page.evaluate(() => ({
     y: window.__cat.y, vy: window.__cat.vy, onGround: window.__cat.onGround,
   }));
   console.log('after jump buffer test:', JSON.stringify(afterBuffer));
+  // The jump fires on landing then arcs up. The cat should have negative vy
+  // (going up) at this point.
   if (afterBuffer.vy >= 0) errs.push('jump buffer did not fire (vy=' + afterBuffer.vy + ' after buffered jump)');
 
   // Test 5: coyote time — leave a platform, jump within 100ms, should still jump
