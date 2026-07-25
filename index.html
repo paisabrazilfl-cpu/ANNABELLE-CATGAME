@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="theme-color" content="#6ebef0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>🐱 Annabelle's Cat Runner</title>
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🐱</text></svg>" />
   <style>
@@ -32,10 +35,45 @@
       width: min(100vw, 1000px);
       aspect-ratio: 900 / 500;
       max-height: 100vh;
+      max-width: 100vw;
       box-shadow: 0 20px 60px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.4) inset;
       border-radius: 16px;
       overflow: hidden;
       background: #87CEEB;
+      touch-action: none;
+    }
+    /* On portrait / mobile: the game area is exactly 9:5 at the top of the
+       screen. The touch bar is a fixed 110px bar at the bottom. The rest
+       is dark gradient. The world never stretches. */
+    @media (max-width: 900px) {
+      html, body { background: linear-gradient(180deg, #87CEEB 0%, #87CEEB 60%, #2a3a4a 100%); }
+      .wrap {
+        display: flex; flex-direction: column;
+        position: relative;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      .stage {
+        position: relative;
+        width: 100vw;
+        height: auto;
+        aspect-ratio: 900 / 500;
+        max-width: 100vw;
+        border-radius: 0;
+        box-shadow: none;
+        background: #87CEEB;
+        flex: 0 0 auto;
+      }
+      .credits { display: none; }
+      .title { display: none; }
+      .hud { top: 8px; left: 8px; right: 8px; gap: 6px; }
+      .hud .badge { font-size: 11px; padding: 3px 8px; }
+      .hud .panel { gap: 6px; flex-wrap: wrap; }
+    }
+    /* Hide the on-canvas title on mobile (the hint is in the touch bar instead) */
+    @media (max-width: 900px) {
+      .title { display: none; }
+      .credits { display: none; }
     }
     canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
     .hud {
@@ -95,13 +133,92 @@
       transition: transform .08s ease;
     }
     .btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+    .btn-alt {
+      background: #6a4fc9;
+      border-bottom-color: #4a2fa0;
+    }
+    .btn-alt:active { border-bottom-color: #4a2fa0; }
     .credits {
       position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
       font-weight: 900; font-size: clamp(14px, 2.4vw, 18px);
       color: #fff; text-shadow: 3px 3px 0 #5b3a14, -1px -1px 0 #5b3a14;
       letter-spacing: 1px;
       pointer-events: none;
+      white-space: nowrap;          /* never wrap onto a second line */
+      z-index: 2;
     }
+
+    /* ===== Touch controls (mobile) =====
+       On mobile, the touch bar lives BELOW the game canvas in a dedicated
+       dark bar so the buttons never block gameplay. */
+    .touch {
+      position: relative;          /* sits below the stage in the flex column */
+      flex: 0 0 110px;             /* fixed bar height */
+      pointer-events: none;
+      display: none;
+      z-index: 5;
+      background: linear-gradient(180deg, rgba(30,40,55,.95) 0%, rgba(20,28,40,1) 100%);
+      box-shadow: 0 -8px 24px rgba(0,0,0,.4);
+      padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+      align-items: center; justify-content: space-between;
+    }
+    .touch.show { display: flex; }
+    .pad {
+      display: flex; align-items: center; gap: 10px;
+      pointer-events: none;
+    }
+    .pad.right { gap: 8px; }
+    .tbtn {
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none; user-select: none;
+      touch-action: none;
+      background: rgba(255,255,255,.92);
+      border: 3px solid #5b3a14;
+      border-bottom-width: 5px;
+      border-radius: 18px;
+      color: #4a2a0a;
+      font-weight: 900;
+      font-size: 26px;
+      display: grid; place-items: center;
+      width: 72px;
+      height: 72px;
+      transition: transform .05s ease, background .05s ease;
+      box-shadow: 0 4px 0 rgba(91,58,20,.35);
+    }
+    .tbtn:active,
+    .tbtn.pressed {
+      transform: translateY(3px);
+      border-bottom-width: 2px;
+      background: rgba(255,210,140,.95);
+    }
+    .tbtn.jump {
+      background: linear-gradient(180deg, #ffd86b, #ff9d2e);
+      color: #4a2a0a;
+      font-size: 18px; letter-spacing: 1px;
+    }
+    .tbtn.duck {
+      background: linear-gradient(180deg, #b6dcff, #6ba8e8);
+      color: #14304a;
+      font-size: 16px; letter-spacing: 1px;
+    }
+    .tbtn.pause {
+      width: 56px; height: 56px; font-size: 20px;
+      background: rgba(255,255,255,.15); color: #fff;
+      border-color: rgba(255,255,255,.4);
+      box-shadow: 0 3px 0 rgba(0,0,0,.4);
+    }
+    .touch-hint {
+      position: absolute; top: 4px; left: 0; right: 0; text-align: center;
+      color: rgba(255,255,255,.6); font-size: 10px; font-weight: 700;
+      letter-spacing: .5px;
+      pointer-events: none;
+    }
+    /* Show touch bar on touch devices or small screens */
+    @media (hover: none) and (pointer: coarse) { .touch { display: flex; } }
+    @media (max-width: 900px) { .touch { display: flex; } }
+    @media (min-width: 901px) { .touch { display: none; } }   /* desktop hides it */
   </style>
 </head>
 <body>
@@ -113,29 +230,77 @@
         <div class="panel">
           <div class="badge" id="scoreBadge">Score: 0</div>
           <div class="badge" id="fishBadge">🐟 0</div>
+          <div class="badge" id="stompBadge">🐾 0</div>
         </div>
         <div class="panel">
           <div class="badge" id="bestBadge">Best: 0</div>
           <div class="badge" id="speedBadge">Speed: 36</div>
         </div>
       </div>
-      <div class="title">SPACE = jump · DOWN = duck · R = restart · ESC = pause</div>
+      <div class="title" id="hintBar">SPACE / ↑ = jump · ↓ = duck · A · D = run · jump on enemies to STOMP! · R = restart · ESC = pause</div>
+      <script>
+        // Run after DOM is ready (these scripts live above the elements they touch)
+        document.addEventListener('DOMContentLoaded', () => {
+          const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+          if (isTouch) {
+            const h = document.getElementById('hintBar');
+            if (h) h.textContent = 'Tap buttons to play — ◀ ▶ run, JUMP, DUCK, II pause';
+
+            const overlay = document.getElementById('overlay');
+            const swap = () => {
+              const allP = overlay ? Array.from(overlay.querySelectorAll('p')) : [];
+              const target = allP.find(p => /click play or press space/i.test(p.textContent));
+              if (target) target.textContent = 'Tap PLAY or press SPACE to start.';
+              const startBtn = document.getElementById('startBtn');
+              if (startBtn) startBtn.textContent = '▶ TAP TO PLAY';
+            };
+            swap();
+            if (overlay) new MutationObserver(swap).observe(overlay, { childList: true, subtree: true });
+          }
+        });
+      </script>
+    </div>
+
+    <!-- On-screen touch controls (mobile / tablets). Sibling of stage, lives below it. -->
+    <div class="touch" id="touchControls">
+      <div class="touch-hint">Tap buttons — ◀ ▶ run, JUMP, DUCK, II pause</div>
+      <div class="pad left">
+        <button class="tbtn" data-key="arrowleft"  data-hold="1" aria-label="Move left">◀</button>
+        <button class="tbtn" data-key="arrowright" data-hold="1" aria-label="Move right">▶</button>
+      </div>
+      <div class="pad right">
+        <button class="tbtn pause" data-key="escape" data-tap="1" aria-label="Pause">II</button>
+        <button class="tbtn duck"  data-key="arrowdown" data-hold="1" aria-label="Duck">DUCK</button>
+        <button class="tbtn jump"  data-key=" "          data-tap="1"  aria-label="Jump">JUMP</button>
+      </div>
+    </div>
       <div class="overlay" id="overlay">
         <div class="card">
           <h1>🐱 Annabelle's Cat Runner</h1>
           <p>Help the orange tabby outrun the neighborhood!</p>
           <p>Grab fish 🐟, dodge dogs 🐶, rocks 🪨 and birds 🐦.</p>
+          <p><b>Jump ON an enemy to STOMP it!</b> +50 points 🐾</p>
           <div class="keys">
             <span class="key">SPACE</span>
             <span class="key">↑</span>
             <span class="key">W</span>
             <span class="key">Jump</span>
+            <span class="key">A</span>
+            <span class="key">D</span>
+            <span class="key">←→</span>
+            <span class="key">Run</span>
             <span class="key">↓</span>
             <span class="key">S</span>
             <span class="key">Duck</span>
+            <span class="key">↑↓</span>
+            <span class="key">Climb</span>
           </div>
-          <p>Click PLAY or press SPACE to start.</p>
-          <button class="btn" id="startBtn">▶ PLAY</button>
+          <p style="margin-top:12px"><b>Choose a game mode:</b></p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn" id="startBtn" data-mode="endless">🏃 ENDLESS</button>
+            <button class="btn btn-alt" id="platformBtn" data-mode="platform">🪜 PLATFORM</button>
+          </div>
+          <p style="font-size:12px;margin-top:10px">Endless: run forever. Platform: climb ladders, grab all the fish, reach the goal 🏁</p>
         </div>
       </div>
     </div>
@@ -156,18 +321,24 @@ const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
-/* ---------- Hi-DPI handling so it stays crisp ---------- */
+/* ---------- Hi-DPI handling so it stays crisp ----------
+   The stage's CSS keeps a 9:5 aspect ratio so the canvas display size
+   always matches the world (W=900, H=500). We scale uniformly and use
+   the device pixel ratio for crisp rendering. */
 function fitCanvas() {
   const rect = cvs.getBoundingClientRect();
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   cvs.width  = Math.floor(rect.width  * dpr);
   cvs.height = Math.floor(rect.height * dpr);
-  ctx.setTransform(dpr * (rect.width  / W),
-                   0,
-                   0,
-                   dpr * (rect.height / H),
-                   0, 0);
+  // Use a uniform scale that fits the world (W=900, H=500) inside the canvas,
+  // centering it. If the canvas is exactly 9:5, scale is identical on both
+  // axes and offsets are zero.
+  const scale = Math.min(cvs.width / W, cvs.height / H);
+  const offsetX = (cvs.width  - W * scale) / 2;
+  const offsetY = (cvs.height - H * scale) / 2;
+  ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
   ctx.imageSmoothingEnabled = false;
+  window.__letterbox = { offsetX, offsetY, scale, w: cvs.width, h: cvs.height };
 }
 const W = 900, H = 500;
 fitCanvas();
@@ -190,6 +361,7 @@ const world = {
   maxScrollSpeed: 760,
   distance: 0,
   fish: 0,
+  stomps: 0,                   // how many enemies the cat squished
   best: Number(localStorage.getItem('annabelle-cat-best') || 0),
   shake: 0,
   flash: 0,
@@ -200,20 +372,57 @@ const world = {
   spawnInterval: 1.4,
   jumpHeld: false,
   duckHeld: false,
+  // mode: 'endless' (the original side-scroller) or 'platform' (Donkey Kong-style levels)
+  mode: 'endless',
+  // platform-mode state
+  level: 1,
+  lives: 3,
+  levelFish: 0,        // fish collected in the current level
+  levelGoal: 3,        // how many fish needed to clear the level
+  levelComplete: false,
+  levelCompleteTimer: 0,
+  ladderClimbSpeed: 160,
+  onLadder: null,      // the ladder the cat is currently climbing (or null)
 };
 
 /* ---------- Entities ---------- */
 const cat = {
   x: 140, y: GROUND_Y - 70, w: 70, h: 70,
-  vy: 0, onGround: true, duck: false,
+  vx: 0, vy: 0,                // horizontal + vertical velocity (Mario-like air control)
+  onGround: true, duck: false,
+  facing: 1,                  // 1 = right, -1 = left (sprite faces right by default)
+  squash: 0,                  // stomp-squash timer (0..1, 0 = full size, 1 = flat)
+  invincible: 0,              // stomp-bounce invincibility timer (seconds)
   anim: 0, blink: 0, blinking: false,
+  // Physics tuning (helps make the cat feel more "alive")
+  coyoteTime: 0,              // seconds of grace after walking off a ledge during which the cat can still jump
+  jumpBuffer: 0,              // seconds remaining of a queued jump (pressed just before landing)
+  wasOnGround: false,         // last-frame was on ground (used to detect coyote)
+  wasOnGroundPlatform: null,  // pointer to the platform we were on last frame (for safe landing)
+  terminalVel: 1100,          // max downward speed
+  dropThroughTimer: 0,        // when > 0, ignore platform collisions (drop-down)
 };
+/* horizontal tuning — feel snappy like Mario */
+const CAT_GROUND_SPEED = 380;   // px/sec when running on ground
+const CAT_AIR_SPEED    = 280;   // px/sec when drifting in air (slightly less = floaty)
+const CAT_ACCEL        = 1800;  // how fast we reach target speed
+const CAT_FRICTION     = 1400;  // ground friction (only when no horizontal input)
+const CAT_MIN_X        = 30;    // left wall (don't fall off screen)
+const CAT_MAX_X        = 640;   // right wall (don't run off the right edge — obstacles still scroll in)
 const obstacles = [];   // dogs, rocks, birds
 const pickups   = [];   // fish
 const clouds    = [];
 const hills     = [];
 const grass     = [];
 const particles = [];
+/* ---------- Platform-mode entities (DK-style) ---------- */
+const platforms = [];   // { x, y, w, h }  horizontal girders to land on
+const ladders   = [];   // { x, y, h, platformBelow, platformAbove }  climbable rungs
+const levelItems = [];  // { x, y, kind: 'fish'|'banana'|'yarn', taken: false, bob: 0 }  collectibles for the level
+const barrels   = [];   // { x, y, vx, vy, platform }  DK-style rolling hazards (top platform only)
+let goal = null;        // { x, y, w, h }  the goal ribbon to reach at the end of a level
+
+/* ---------- Entities (declared at top of file) ---------- */
 const pops      = [];   // floating "+1" texts
 
 /* seed background */
@@ -253,10 +462,125 @@ cvs.addEventListener('touchstart', e => { e.preventDefault();
 }, { passive: false });
 cvs.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
 
+function startWithMode(mode) {
+  world.mode = mode;
+  if (mode === 'platform') {
+    world.level = 1;
+    world.lives = 3;
+    world.fish = 0;
+    world.stomps = 0;
+  }
+  if (!world.started) {
+    // initial start: reset() loads the level (which dispatches by world.mode)
+    reset();
+    startGame();
+  } else if (world.over) {
+    restart();
+  } else {
+    // mid-game mode switch: just reset
+    reset();
+  }
+}
+
 document.getElementById('startBtn').addEventListener('click', () => {
-  if (!world.started) startGame();
-  else if (world.over) restart();
+  startWithMode('endless');
 });
+const platformBtn = document.getElementById('platformBtn');
+if (platformBtn) {
+  platformBtn.addEventListener('click', () => startWithMode('platform'));
+}
+
+/* ---------- On-screen touch buttons (mobile) ---------- */
+(function setupTouchButtons() {
+  const controls = document.getElementById('touchControls');
+  const overlay  = document.getElementById('overlay');
+  if (!controls) return;
+
+  // detect touch capability and show controls
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isTouch) controls.classList.add('show');
+
+  // hide the touch buttons while the start/game-over overlay is visible,
+  // so they don't sit on top of the menu card
+  const syncHide = () => {
+    if (!isTouch) return;
+    const hidden = overlay && !overlay.classList.contains('hidden');
+    controls.style.opacity = hidden ? '0' : '1';
+    controls.style.pointerEvents = hidden ? 'none' : '';
+  };
+  syncHide();
+  if (overlay) new MutationObserver(syncHide).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+
+  // Per-pointer state: track which pointer is on which button so two fingers
+  // can press JUMP + RIGHT simultaneously without one canceling the other.
+  const activePointers = new Map();   // pointerId -> { btn, key, isHold }
+  const pressedKeys    = new Set();   // keys currently held by a touch button
+
+  function press(btn) {
+    const key  = (btn.dataset.key || '').toLowerCase();
+    const hold = btn.dataset.hold === '1';
+    const tap  = btn.dataset.tap  === '1';
+    if (!key) return;
+    btn.classList.add('pressed');
+    if (tap) {
+      // Tap fires the keydown once (no keyup) so single-shot actions work
+      // (jump, pause). We add to keys Set then remove on next frame.
+      keys.add(key);
+      setTimeout(() => keys.delete(key), 50);
+    } else {
+      // Hold keeps the key in the set until released
+      keys.add(key);
+      pressedKeys.add(key);
+    }
+  }
+  function release(btn) {
+    const key  = (btn.dataset.key || '').toLowerCase();
+    const hold = btn.dataset.hold === '1';
+    btn.classList.remove('pressed');
+    if (hold && pressedKeys.has(key)) {
+      keys.delete(key);
+      pressedKeys.delete(key);
+    }
+  }
+
+  // Pointer events unify mouse + touch + pen
+  controls.addEventListener('pointerdown', e => {
+    const btn = e.target.closest('.tbtn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try { btn.setPointerCapture(e.pointerId); } catch {}
+    activePointers.set(e.pointerId, { btn });
+    press(btn);
+  });
+  controls.addEventListener('pointerup', e => {
+    const state = activePointers.get(e.pointerId);
+    if (!state) return;
+    e.preventDefault();
+    activePointers.delete(e.pointerId);
+    release(state.btn);
+  });
+  controls.addEventListener('pointercancel', e => {
+    const state = activePointers.get(e.pointerId);
+    if (!state) return;
+    activePointers.delete(e.pointerId);
+    release(state.btn);
+  });
+  // safety: if a pointer leaves the window entirely, release everything
+  addEventListener('pointercancel', () => {
+    for (const [pid, state] of activePointers) release(state.btn);
+    activePointers.clear();
+  });
+  // release held keys if the page loses visibility
+  addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      for (const k of pressedKeys) keys.delete(k);
+      pressedKeys.clear();
+      for (const [, state] of activePointers) state.btn.classList.remove('pressed');
+      activePointers.clear();
+    }
+  });
+})();
 
 /* ---------- Web Audio synth (no asset files) ---------- */
 let actx = null;
@@ -285,10 +609,22 @@ const sfx = {
   coin:  () => { beep(880, 0.07, 'square', 0.14); setTimeout(() => beep(1320, 0.09, 'square', 0.14), 60); },
   hit:   () => { beep(180, 0.25, 'sawtooth', 0.22, -120); setTimeout(() => beep(90, 0.3, 'sawtooth', 0.18, -40), 100); },
   point: () => beep(660, 0.08, 'triangle', 0.14),
+  stomp: () => { beep(700, 0.07, 'square', 0.18, -100); setTimeout(() => beep(420, 0.10, 'square', 0.16, 60), 50); },
+  land:  () => beep(180, 0.04, 'triangle', 0.10),
 };
 
 /* ---------- Game actions ---------- */
 function catJump() { if (cat.onGround) { cat.vy = -780; cat.onGround = false; sfx.jump(); } }
+/* mid-air variable-jump: if you release jump while still rising, cut the velocity */
+function cutJump() { if (!cat.onGround && cat.vy < -200) cat.vy = -200; }
+/* move cat left/right with air control. dir = -1 or +1. air = bool. */
+function catMove(dir, air) {
+  const target = (air ? CAT_AIR_SPEED : CAT_GROUND_SPEED) * dir;
+  // accelerate toward target
+  if (dir !== 0) cat.facing = dir;
+  if (cat.vx < target)      cat.vx = Math.min(target, cat.vx + CAT_ACCEL * (1/60));
+  else if (cat.vx > target) cat.vx = Math.max(target, cat.vx - CAT_ACCEL * (1/60));
+}
 function startGame() {
   world.started = true; world.over = false;
   document.getElementById('overlay').classList.add('hidden');
@@ -297,12 +633,486 @@ function startGame() {
 function restart() { reset(); world.started = true; world.over = false; document.getElementById('overlay').classList.add('hidden'); }
 function reset() {
   world.scrollSpeed = world.baseScrollSpeed;
-  world.distance = 0; world.fish = 0;
+  world.distance = 0; world.fish = 0; world.stomps = 0;
   world.spawnTimer = 1.0; world.spawnInterval = 1.4;
   world.shake = 0; world.flash = 0;
+  world.lives = 3;
   obstacles.length = 0; pickups.length = 0;
   particles.length = 0; pops.length = 0;
-  cat.x = 140; cat.y = GROUND_Y - 70; cat.vy = 0; cat.onGround = true; cat.duck = false;
+  cat.x = 140; cat.y = GROUND_Y - 70;
+  cat.vx = 0; cat.vy = 0;
+  cat.onGround = true; cat.duck = false;
+  cat.facing = 1; cat.squash = 0; cat.invincible = 0;
+  cat.wasOnGroundPlatform = 'floor';   // we start on the floor
+  // mode-specific reset
+  if (world.mode === 'platform') {
+    loadLevel(world.level);
+  }
+}
+
+/* =====================================================================
+   PLATFORM MODE — Donkey Kong / SNES-era platformer
+   4-5 girders at different heights, 2-3 ladders between them.
+   Collect fish, reach the goal ribbon. Clear 3 levels to win.
+   ===================================================================== */
+
+/* Level data: each level is a list of platforms + ladders + items + goal.
+   Platforms are 14px-tall girders (think Donkey Kong). The y values
+   are measured from the top, so 380 means a girder near the bottom.
+   The bottom is the ground (GROUND_Y). The "ground" platform is
+   implicit (cat can stand on the world floor). */
+const LEVELS = [
+  // Level 1 — gentle intro
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },             // the floor itself
+      { x:  80, y: 360,            w: 280, h: 14 },
+      { x: 460, y: 360,            w: 360, h: 14 },
+      { x:  80, y: 240,            w: 380, h: 14 },
+      { x: 540, y: 240,            w: 280, h: 14 },
+      { x: 200, y: 120,            w: 500, h: 14 },
+    ],
+    ladders: [
+      { x: 200, top: 240, bottom: 360, height: 120 - 14 },  // up from 360 to 240
+      { x: 600, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 380, top: 120, bottom: 240, height: 120 - 14 },
+      { x: 300, top: 360, bottom: 446, height:  86 - 14 },  // floor to first girder
+    ],
+    items: [
+      { x: 140, y: 330, kind: 'fish' },
+      { x: 700, y: 330, kind: 'fish' },
+      { x: 200, y: 210, kind: 'fish' },
+      { x: 700, y: 210, kind: 'yarn' },
+      { x: 380, y:  90, kind: 'banana' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 0,
+  },
+  // Level 2 — dogs patrol the girders
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
+      { x:  60, y: 360, w: 250, h: 14 },
+      { x: 400, y: 360, w: 200, h: 14 },
+      { x: 650, y: 360, w: 250, h: 14 },
+      { x:  60, y: 240, w: 280, h: 14 },
+      { x: 420, y: 240, w: 180, h: 14 },
+      { x: 650, y: 240, w: 250, h: 14 },
+      { x: 200, y: 120, w: 500, h: 14 },
+    ],
+    ladders: [
+      { x: 180, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 480, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 180, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 480, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 720, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 380, top: 120, bottom: 240, height: 120 - 14 },
+    ],
+    items: [
+      { x: 120, y: 330, kind: 'fish' },
+      { x: 320, y: 330, kind: 'fish' },
+      { x: 550, y: 330, kind: 'fish' },
+      { x: 120, y: 210, kind: 'yarn' },
+      { x: 320, y: 210, kind: 'fish' },
+      { x: 720, y: 210, kind: 'fish' },
+      { x: 380, y:  90, kind: 'banana' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 1,
+    dogs: [
+      { platform: 1, dir: 1 },  // walks on platform index 1
+      { platform: 6, dir: -1 }, // walks on platform index 6 (right side)
+    ],
+  },
+  // Level 3 — barrels roll from the top
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
+      { x:  40, y: 360, w: 220, h: 14 },
+      { x: 320, y: 360, w: 200, h: 14 },
+      { x: 580, y: 360, w: 280, h: 14 },
+      { x:  40, y: 240, w: 240, h: 14 },
+      { x: 360, y: 240, w: 200, h: 14 },
+      { x: 620, y: 240, w: 240, h: 14 },
+      { x: 100, y: 120, w: 700, h: 14 },
+    ],
+    ladders: [
+      { x: 140, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 420, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 140, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 700, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 460, top: 120, bottom: 240, height: 120 - 14 },
+    ],
+    items: [
+      { x: 100, y: 330, kind: 'fish' },
+      { x: 300, y: 330, kind: 'fish' },
+      { x: 500, y: 330, kind: 'fish' },
+      { x: 100, y: 210, kind: 'fish' },
+      { x: 300, y: 210, kind: 'yarn' },
+      { x: 500, y: 210, kind: 'fish' },
+      { x: 700, y: 210, kind: 'banana' },
+      { x: 200, y:  90, kind: 'fish' },
+      { x: 600, y:  90, kind: 'fish' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 2,
+    dogs: [
+      { platform: 1, dir: 1 },
+      { platform: 4, dir: -1 },
+    ],
+  },
+];
+
+function loadLevel(n) {
+  const lvl = LEVELS[(n - 1) % LEVELS.length];
+  platforms.length = 0;
+  ladders.length = 0;
+  levelItems.length = 0;
+  obstacles.length = 0;     // platform mode uses dogs as platform-patrolling obstacles
+  barrels.length = 0;
+  pickups.length = 0;      // not used in platform mode (we have levelItems)
+
+  for (const p of lvl.platforms) platforms.push({ ...p });
+  for (const l of lvl.ladders)   ladders.push({ ...l });
+  for (const it of lvl.items)    levelItems.push({ ...it, taken: false, bob: rand(0, Math.PI*2) });
+  world.levelGoal = lvl.items.filter(i => i.kind === 'fish').length;
+  world.levelFish = 0;
+  world.levelComplete = false;
+  world.levelCompleteTimer = 0;
+  goal = { ...lvl.goal };
+
+  // Place the cat on the floor (index 0) at the start. cat.h is the cat's full
+  // height; cat stands with its bottom on the platform's top.
+  const floor = platforms[0];
+  cat.x = 60;
+  cat.y = floor.y - cat.h;
+  cat.vx = 0; cat.vy = 0; cat.onGround = true; cat.duck = false;
+  cat.facing = 1; cat.squash = 0; cat.invincible = 0.5;
+  world.onLadder = null;
+
+  // Dogs that patrol specific platforms
+  if (lvl.dogs) {
+    for (const d of lvl.dogs) {
+      const p = platforms[d.platform];
+      if (!p) continue;
+      obstacles.push({
+        kind: 'dog', x: p.x + p.w/2 - 25, y: p.y - 48,
+        w: 50, h: 48, duckable: false,
+        platform: p, dir: d.dir, speed: 80 + world.level * 20,
+      });
+    }
+  }
+  // Barrels that roll on the top platform
+  if (lvl.barrels) {
+    for (let i = 0; i < lvl.barrels; i++) {
+      const top = platforms[platforms.length - 1];
+      barrels.push({
+        x: top.x + 40 + i * 30, y: top.y - 26,
+        w: 26, h: 26, vx: 80 + world.level * 20, vy: 0,
+        platform: top, falling: false, fallVy: 0,
+      });
+    }
+  }
+}
+
+function isOnLadder(x, y, w, h) {
+  // return the ladder the cat's center is on, or null
+  const cx = x + w/2, cy = y + h/2;
+  for (const l of ladders) {
+    if (cx >= l.x - 4 && cx <= l.x + 20 && cy >= l.bottom - 4 && cy <= l.top + 4) return l;
+  }
+  return null;
+}
+
+function platformAt(x, y, w, h) {
+  // return the platform whose top is at y+h (cat's feet)
+  for (const p of platforms) {
+    if (x + w > p.x && x < p.x + p.w && y + h <= p.y + 6 && y + h >= p.y - 4) return p;
+  }
+  return null;
+}
+
+function updatePlatform(dt) {
+  /* common cat physics (anim + blink) */
+  cat.anim += dt * 14;
+  cat.blink -= dt;
+  if (cat.blink <= 0) { cat.blinking = true; cat.blink = 0.12; }
+  else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
+  if (cat.squash > 0) cat.squash = Math.max(0, cat.squash - dt * 2.2);
+  if (cat.invincible > 0) cat.invincible = Math.max(0, cat.invincible - dt);
+
+  /* ladder detection */
+  const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
+  const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+  const ladderUnderMe = isOnLadder(cat.x, catY, catW, catH);
+  const upHeld    = keys.has('arrowup')    || keys.has('w');
+  const downHeld  = keys.has('arrowdown')  || keys.has('s');
+  // jump is SPACE only — arrow-up is reserved for ladder climbing
+  const jumpHeld  = keys.has(' ');
+  const leftHeld  = keys.has('arrowleft')  || keys.has('a');
+  const rightHeld = keys.has('arrowright') || keys.has('d');
+
+  // enter ladder: pressing up/down while on or under a ladder
+  if (!world.onLadder && ladderUnderMe && (upHeld || downHeld)) {
+    world.onLadder = ladderUnderMe;
+    cat.vx = 0; cat.vy = 0; cat.onGround = false;
+    // snap to ladder center
+    cat.x = ladderUnderMe.x - catW/2 + 10;
+  }
+  // leave ladder: pressing left/right OR jumping (jump is space-only; arrow-up
+  // is the climb key so it shouldn't kick the cat off the ladder)
+  const spaceJump = keys.has(' ');
+  if (world.onLadder && (leftHeld || rightHeld || (spaceJump && cat.vy <= 0))) {
+    if (spaceJump) cat.vy = -780;
+    world.onLadder = null;
+  }
+
+  if (world.onLadder) {
+    // climb up/down
+    const l = world.onLadder;
+    if (upHeld) {
+      cat.y -= world.ladderClimbSpeed * dt;
+      cat.facing = 1;
+    } else if (downHeld) {
+      cat.y += world.ladderClimbSpeed * dt;
+      cat.facing = 1;
+    }
+    // clamp to ladder range
+    if (cat.y < l.top - catH) {
+      // reached top platform
+      cat.y = l.top - catH;
+      const p = platformAt(cat.x, cat.y, catW, catH);
+      if (p) { cat.onGround = true; cat.vy = 0; }
+      world.onLadder = null;
+    } else if (cat.y + catH > l.bottom) {
+      // reached bottom (the floor)
+      cat.y = l.bottom - catH;
+      cat.onGround = true; cat.vy = 0;
+      world.onLadder = null;
+    }
+  } else {
+    // horizontal movement
+    const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
+    if (moveDir !== 0) {
+      cat.facing = moveDir;
+      const target = CAT_GROUND_SPEED * moveDir;
+      if (cat.vx < target)      cat.vx = Math.min(target, cat.vx + CAT_ACCEL * dt);
+      else if (cat.vx > target) cat.vx = Math.max(target, cat.vx - CAT_ACCEL * dt);
+    } else if (cat.onGround) {
+      if (cat.vx > 0)      cat.vx = Math.max(0, cat.vx - CAT_FRICTION * dt);
+      else if (cat.vx < 0) cat.vx = Math.min(0, cat.vx + CAT_FRICTION * dt);
+    }
+    cat.x += cat.vx * dt;
+
+    // ─── drop-through: DOWN + JUMP at the same moment drops through a platform.
+    // Must run BEFORE jump, otherwise a regular jump eats the input first.
+    if (downHeld && jumpHeld && cat.onGround && cat.dropThroughTimer <= 0) {
+      cat.dropThroughTimer = 0.25;   // 250ms of platform-ignore
+      cat.onGround = false;
+      cat.vy = 60;                   // gentle nudge down
+      cat.jumpBuffer = 0;            // don't queue a jump
+    }
+    if (cat.dropThroughTimer > 0) cat.dropThroughTimer -= dt;
+
+    // ─── jump (with coyote time + jump buffer for responsive feel) ───
+    // coyote time: 100ms grace after leaving a ledge
+    // jump buffer: 120ms grace where pressing jump before landing still jumps
+    if (jumpHeld) cat.jumpBuffer = 0.12;
+    const canJump = cat.onGround || cat.coyoteTime > 0;
+    if (cat.dropThroughTimer <= 0 && cat.jumpBuffer > 0 && canJump) {
+      cat.vy = -780; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;
+      sfx.jump();
+    }
+    // release jump cuts (variable jump height)
+    if (cat.invincible <= 0) {
+      if (!jumpHeld && cat.vy < -200) cat.vy = -200;
+    }
+
+    // gravity (with terminal velocity cap) — tuned for a snappy, "game-y" fall
+    // that still feels weighted. Base 2200 px/s² + extra pull when falling fast.
+    const _prevY = cat.y;
+    if (!cat.onGround) {
+      let g = 2200;
+      if (cat.vy > 400) g += 600;          // heavy gravity when already falling
+      cat.vy += g * dt;
+      if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;
+      cat.y += cat.vy * dt;
+    }
+
+    // landing on a platform (top side)
+    cat.onGround = false;
+    // (skip platform landing if we're dropping through them)
+    if (cat.dropThroughTimer <= 0) {
+      for (const p of platforms) {
+        // Was the cat on or above this platform last frame? (touching counts as "above")
+        const wasAboveOrOn = (_prevY + catH) <= p.y + 2;
+        // Is the cat now overlapping the top of the platform?
+        const nowOver  = cat.y + catH >= p.y && cat.y + catH <= p.y + 16;
+        const onHoriz  = cat.x + catW > p.x && cat.x < p.x + p.w;
+        const wasOnThisPlatform = cat.wasOnGroundPlatform === p;
+        // CRITICAL: only land if EITHER (a) we were on this same platform last
+        // frame (walking along it) OR (b) we're clearly falling onto it (vy>50).
+        // Without this gate, a cat walking off the edge of one platform would
+        // snap back onto a different platform that happens to be at the same
+        // y as the one we left (the "magnetic platform" bug).
+        const stayingOnPlatform = wasOnThisPlatform && cat.vy >= -10;
+        const fallingOntoPlatform = !wasOnThisPlatform && cat.vy > 50;
+        if (wasAboveOrOn && nowOver && onHoriz && (stayingOnPlatform || fallingOntoPlatform)) {
+          // landing: if the cat was falling fast, spawn a dust puff
+          const landingSpeed = Math.abs(cat.vy);
+          cat.y = p.y - catH; cat.vy = 0; cat.onGround = true;
+          cat.wasOnGroundPlatform = p;
+          if (cat.squash > 0.6) sfx.land();
+          if (landingSpeed > 350) {
+            // dust puffs on both sides
+            for (let k = 0; k < 8; k++) {
+              const side = k < 4 ? -1 : 1;
+              particles.push({
+                ...makeParticle(p.x + catW/2 + side * (catW/2 + Math.random() * 8),
+                                p.y - 2, 'gold'),
+                vx: side * rand(60, 140),
+                vy: -rand(40, 120),
+                life: rand(0.3, 0.5),
+                max: 0.5,
+                c: 'rgba(220,220,220,.6)',
+                s: rand(2, 3),
+              });
+            }
+            world.shake = Math.min(0.15, landingSpeed / 4000);  // tiny screen-shake on hard landings
+          }
+          break;
+        }
+      }
+    }
+    // coyote time: if we were on ground last frame but aren't now, start the grace timer
+    if (cat.wasOnGround && !cat.onGround && cat.vy >= 0) {
+      cat.coyoteTime = 0.10;
+    }
+    if (cat.coyoteTime > 0) cat.coyoteTime -= dt;
+    if (cat.jumpBuffer > 0) cat.jumpBuffer -= dt;
+    cat.wasOnGround = cat.onGround;
+    if (!cat.onGround) cat.wasOnGroundPlatform = null;   // forgot which one as soon as we leave
+
+    // fall off the bottom of the world → death
+    if (cat.y > H + 100) { gameOver(); return; }
+  }
+
+  // wall clamps
+  if (cat.x < 0) cat.x = 0;
+  if (cat.x + catW > W) cat.x = W - catW;
+
+  // dogs patrol their platforms
+  // detect whether the cat was above any platform (or floor) last frame
+  const catBottomLast = (catY + catH);
+  _wasAbovePlatform = false;
+  for (const p of platforms) {
+    if (cat.x + catW > p.x && cat.x < p.x + p.w && catBottomLast <= p.y + 4) {
+      _wasAbovePlatform = true; break;
+    }
+  }
+
+  for (const o of obstacles) {
+    if (o.kind !== 'dog' || !o.platform) continue;
+    o.x += o.dir * o.speed * dt;
+    if (o.x < o.platform.x) { o.x = o.platform.x; o.dir = 1; }
+    if (o.x + o.w > o.platform.x + o.platform.w) { o.x = o.platform.x + o.platform.w - o.w; o.dir = -1; }
+    // collision
+    if (cat.invincible <= 0 && rectsOverlap(cat.x, catY, catW, catH, o.x, o.y, o.w, o.h)) {
+      if (cat.vy > 50 && _wasAbovePlatform) { // stomp
+        obstacles.splice(obstacles.indexOf(o), 1);
+        world.stomps++; cat.vy = -520; cat.squash = 1; cat.invincible = 0.35;
+        sfx.stomp();
+      } else {
+        // hurt: lose a life
+        loseLife();
+        return;
+      }
+    }
+  }
+
+  // barrels
+  for (let i = barrels.length - 1; i >= 0; i--) {
+    const b = barrels[i];
+    if (b.falling) {
+      b.fallVy += 1200 * dt;
+      b.y += b.fallVy * dt;
+      // did it land on a platform below?
+      const land = platformAt(b.x, b.y, b.w, b.h);
+      if (land && b.y + b.h >= land.y && b.y + b.h <= land.y + 12) {
+        b.y = land.y - b.h; b.fallVy = 0; b.falling = false;
+        b.platform = land;
+      } else if (b.y > H + 30) {
+        barrels.splice(i, 1); continue;
+      }
+    } else {
+      // roll along platform
+      b.x += b.vx * dt;
+      if (b.x <= b.platform.x || b.x + b.w >= b.platform.x + b.platform.w) {
+        // fall off the edge
+        b.falling = true; b.fallVy = 0;
+        // alternate direction for variety
+        b.vx = -b.vx;
+      }
+    }
+    if (cat.invincible <= 0 && rectsOverlap(cat.x, catY, catW, catH, b.x, b.y, b.w, b.h)) {
+      loseLife(); return;
+    }
+  }
+
+  // items
+  for (const it of levelItems) {
+    if (it.taken) continue;
+    it.bob += dt * 3;
+    if (rectsOverlap(cat.x, catY, catW, catH, it.x - 14, it.y - 12, 28, 24)) {
+      it.taken = true;
+      const pts = it.kind === 'fish' ? 25 : (it.kind === 'yarn' ? 75 : 100);
+      if (it.kind === 'fish') { world.levelFish++; world.fish++; }
+      for (let k = 0; k < 14; k++) particles.push(makeParticle(it.x, it.y, 'gold'));
+      popText('+' + pts, it.x, it.y - 8, it.kind === 'fish' ? '#ffd86b' : '#ffae3d');
+      sfx.coin();
+      // win check
+      if (world.levelFish >= world.levelGoal) {
+        world.levelComplete = true;
+        world.levelCompleteTimer = 1.6;
+        popText('LEVEL CLEAR!', W/2, H/2 - 20, '#ffd86b');
+      }
+    }
+  }
+
+  // goal
+  if (goal && !world.levelComplete && rectsOverlap(cat.x, catY, catW, catH, goal.x, goal.y, goal.w, goal.h)) {
+    if (world.levelFish >= world.levelGoal) {
+      world.levelComplete = true;
+      world.levelCompleteTimer = 1.6;
+      popText('LEVEL CLEAR!', W/2, H/2 - 20, '#ffd86b');
+    } else {
+      popText('Need ' + (world.levelGoal - world.levelFish) + ' more 🐟', cat.x, cat.y - 20, '#ff6b6b');
+    }
+  }
+
+  // level complete → next level
+  if (world.levelComplete) {
+    world.levelCompleteTimer -= dt;
+    if (world.levelCompleteTimer <= 0) {
+      world.level++;
+      if (world.level > LEVELS.length) world.level = 1;  // loop
+      world.mode = 'platform';
+      loadLevel(world.level);
+    }
+  }
+}
+
+let _wasAbovePlatform = false;  // for the stomp check in platform mode
+
+function loseLife() {
+  if (cat.invincible > 0) return;
+  world.lives--;
+  sfx.hit();
+  if (world.lives <= 0) { gameOver(); return; }
+  // respawn at start of level
+  cat.x = 60; cat.y = GROUND_Y - cat.h;
+  cat.vx = 0; cat.vy = 0; cat.invincible = 1.5; cat.squash = 0;
+  world.onLadder = null;
 }
 
 function gameOver() {
@@ -318,7 +1128,7 @@ function gameOver() {
     o.classList.remove('hidden');
     o.querySelector('.card').innerHTML = `
       <h1>💥 Game Over</h1>
-      <p>Score: <b>${score}</b> &nbsp; 🐟 ${world.fish}</p>
+      <p>Score: <b>${score}</b> &nbsp; 🐟 ${world.fish} &nbsp; 🐾 ${world.stomps}</p>
       <p>Best: <b>${world.best}</b></p>
       <p>Press SPACE, R, or click PLAY to try again.</p>
       <button class="btn" id="startBtn">▶ PLAY AGAIN</button>
@@ -327,7 +1137,7 @@ function gameOver() {
   }, 350);
 }
 
-function scoreVal() { return Math.floor(world.distance) + world.fish * 25; }
+function scoreVal() { return Math.floor(world.distance) + world.fish * 25 + world.stomps * 50; }
 
 /* ---------- Spawning ---------- */
 function spawnObstacle() {
@@ -377,24 +1187,60 @@ function popText(txt, x, y, c='#ffd86b') { pops.push({ txt, x, y, life: 1.0, c }
 
 /* ---------- Update ---------- */
 let lastT = performance.now();
-function update(now) {
-  const dt = Math.min(0.05, (now - lastT) / 1000);
-  lastT = now;
-
-  if (!world.started || world.paused || world.over) { draw(); requestAnimationFrame(update); return; }
-
+function updateEndless(dt) {
   /* input */
   cat.duck = keys.has('arrowdown') || keys.has('s');
   if ((keys.has(' ') || keys.has('arrowup') || keys.has('w')) && cat.onGround) catJump();
+  // release-jump: cut the jump short if you let go while still going up
+  if (cat.invincible <= 0) {  // stomp bounce shouldn't be cut short
+    const stillHolding = keys.has(' ') || keys.has('arrowup') || keys.has('w');
+    if (!stillHolding) cutJump();
+  }
+  // horizontal input (Mario-like: full control on ground AND in air)
+  const leftHeld  = keys.has('arrowleft')  || keys.has('a');
+  const rightHeld = keys.has('arrowright') || keys.has('d');
+  const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
+  if (moveDir !== 0) catMove(moveDir, !cat.onGround);
 
   /* physics */
   cat.anim += dt * 14;
   cat.blink -= dt;
   if (cat.blink <= 0) { cat.blinking = true; cat.blink = 0.12; }
   else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
-  if (!cat.onGround) { cat.vy += 1800 * dt; cat.y += cat.vy * dt; }
-  const h = cat.duck ? cat.h * 0.6 : cat.h;
-  if (cat.y + h >= GROUND_Y) { cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true; }
+
+  // gravity (lighter while invincible for that floaty-bounce feel)
+  // heavier when already falling fast for that "weight" feel
+  let grav = (cat.invincible > 0) ? 1100 : 2200;
+  if (cat.vy > 400) grav += 600;
+  // remember the previous-frame bottom of the cat for stomp detection
+  // (must be sampled BEFORE we move it, otherwise the side-bump path always wins)
+  const _prevY = cat.y;
+  if (!cat.onGround) {
+    cat.vy += grav * dt;
+    if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;  // cap fall speed
+    cat.y += cat.vy * dt;
+  }
+
+  // horizontal friction when no input on the ground
+  if (cat.onGround && moveDir === 0) {
+    if (cat.vx > 0)      cat.vx = Math.max(0, cat.vx - CAT_FRICTION * dt);
+    else if (cat.vx < 0) cat.vx = Math.min(0, cat.vx + CAT_FRICTION * dt);
+  }
+  // apply horizontal velocity
+  cat.x += cat.vx * dt;
+
+  // wall clamps (so the cat can't run off the left/right of the screen)
+  if (cat.x < CAT_MIN_X)             { cat.x = CAT_MIN_X; cat.vx = 0; }
+  if (cat.x + cat.w > CAT_MAX_X)     { cat.x = CAT_MAX_X - cat.w; cat.vx = 0; }
+
+  // (ground clamp intentionally moved to AFTER the obstacle collision loop,
+  //  so a stomp can lift the cat into the air before it would otherwise snap
+  //  to the floor and turn a stomp into a side-bump game-over)
+  cat.onGround = false;
+
+  // decay timers
+  if (cat.squash > 0)     cat.squash = Math.max(0, cat.squash - dt * 2.2);
+  if (cat.invincible > 0) cat.invincible = Math.max(0, cat.invincible - dt);
 
   /* difficulty ramp */
   const t = Math.min(1, world.distance / 4000);
@@ -409,15 +1255,46 @@ function update(now) {
   for (const h of hills)  { h.x -= world.scrollSpeed * 0.35 * dt; if (h.x + h.w < -50) { h.x = W + rand(0, 300); h.w = rand(180, 340); h.h = rand(60, 140); } }
   for (const g of grass)  { g.x -= world.scrollSpeed * 0.9  * dt; if (g.x < -10) g.x = W + rand(0, 100); }
 
-  /* move + collide obstacles */
-  for (let i = obstacles.length - 1; i >= 0; i--) {
+  /* move obstacles horizontally first (so the cat-vs-rock overlap is consistent
+     with what the stomp check sees this frame) */
+  for (let i = 0; i < obstacles.length; i++) {
     const o = obstacles[i];
     o.x -= world.scrollSpeed * dt;
     if (o.kind === 'bird') { o.y += Math.sin((o.phase += dt * 8)) * 0.6; }
+  }
+
+  /* collide + stomp check (Mario-style) */
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
     if (o.x + o.w < -20) { obstacles.splice(i, 1); continue; }
     const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
     const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+
     if (rectsOverlap(cat.x, catY, catW, catH, o.x, o.y, o.w, o.h)) {
+      // Mario-style stomp check: cat was above the obstacle's top last frame AND is falling.
+      // Use the REAL previous-frame y (sampled before gravity ran) so a side-bump
+      // doesn't masquerade as a stomp.
+      const catBottom    = catY + catH;
+      const prevCatBottom = _prevY + catH;
+      const wasAbove     = prevCatBottom <= o.y + 4;       // small tolerance
+      const isFalling    = cat.vy > 50;
+      if (cat.invincible <= 0 && isFalling && wasAbove) {
+        // STOMP! Kill the obstacle, bounce the cat, +50 score, juicy feedback
+        obstacles.splice(i, 1);
+        world.stomps++;
+        cat.vy = -520;             // bounce up
+        cat.onGround = false;
+        cat.squash = 1.0;          // squash the cat on next landing
+        cat.invincible = 0.35;     // brief i-frames so you don't insta-rehit
+        // gold + sparkle particles burst from the squished enemy
+        for (let k = 0; k < 22; k++) particles.push(makeParticle(o.x + o.w/2, o.y + o.h/2, 'gold'));
+        popText('STOMP!', o.x + o.w/2, o.y - 8, '#ffd86b');
+        popText('+50',    o.x + o.w/2, o.y + 18, '#ffae3d');
+        sfx.stomp();
+        world.shake = 0.12;        // tiny screen-shake for impact
+        continue;
+      }
+      // otherwise: side-bump = death (but ducking still passes birds)
       if (!(cat.duck && o.duckable)) gameOver();
     }
   }
@@ -437,6 +1314,16 @@ function update(now) {
       popText('+1', cat.x + 30, cat.y - 10, '#ffd86b');
       sfx.coin();
     }
+  }
+
+  /* NOW clamp the cat to the ground (after all collision checks so stomps
+     have a chance to lift the cat into the air before it gets snapped down) */
+  const h = cat.duck ? cat.h * 0.6 : cat.h;
+  if (cat.y + h >= GROUND_Y) {
+    const wasInAir = !cat.onGround;
+    cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true;
+    cat.wasOnGroundPlatform = 'floor';
+    if (wasInAir && cat.squash > 0.6) { sfx.land(); }
   }
 
   /* particles */
@@ -460,12 +1347,54 @@ function update(now) {
   world.distance += world.scrollSpeed * dt * 0.05;
   if (world.shake > 0) world.shake -= dt;
   if (world.flash > 0) world.flash -= dt;
+}
 
-  /* HUD */
+function updateParticlesOnly(dt) {
+  /* particles */
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.vy += 400 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  /* popups */
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    p.life -= dt;
+    p.y -= 30 * dt;
+    if (p.life <= 0) pops.splice(i, 1);
+  }
+  if (world.shake > 0) world.shake -= dt;
+  if (world.flash > 0) world.flash -= dt;
+}
+
+function updateHUD() {
   document.getElementById('scoreBadge').textContent = 'Score: ' + scoreVal();
   document.getElementById('fishBadge').textContent  = '🐟 ' + world.fish;
+  document.getElementById('stompBadge').textContent = '🐾 ' + world.stomps;
   document.getElementById('bestBadge').textContent  = 'Best: ' + world.best;
-  document.getElementById('speedBadge').textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+  const speedEl = document.getElementById('speedBadge');
+  if (world.mode === 'platform') {
+    speedEl.textContent = 'L' + world.level + ' ❤️' + world.lives + ' 🎯' + world.levelFish + '/' + world.levelGoal;
+  } else {
+    speedEl.textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+  }
+}
+
+function update(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  if (!world.started || world.paused || world.over) { draw(); requestAnimationFrame(update); return; }
+
+  if (world.mode === 'platform') {
+    updatePlatform(dt);
+  } else {
+    updateEndless(dt);
+  }
+  updateParticlesOnly(dt);
+  updateHUD();
 
   draw();
   requestAnimationFrame(update);
@@ -474,44 +1403,164 @@ function update(now) {
 /* ---------- Drawing (single-pixel style for crisp retro) ---------- */
 function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x|0, y|0, w|0, h|0); }
 
+/* Falling air-streaks: small vertical white wisps that rush past the cat when
+   it's falling fast. Creates a "whoosh" effect. */
+const _airStreaks = [];
+function drawAirStreaks() {
+  // spawn new streaks when falling
+  if (!cat.onGround && cat.vy > 300) {
+    if (Math.random() < 0.4) {
+      _airStreaks.push({
+        x: cat.x + Math.random() * cat.w,
+        y: cat.y - 5 + Math.random() * cat.h,
+        len: 4 + Math.random() * 12,
+        life: 0.5,
+        max: 0.5,
+      });
+    }
+  }
+  // update + draw
+  for (let i = _airStreaks.length - 1; i >= 0; i--) {
+    const s = _airStreaks[i];
+    s.life -= 0.05;
+    s.y += cat.vy * 0.04;  // streaks move with the cat's fall speed
+    if (s.life <= 0) { _airStreaks.splice(i, 1); continue; }
+    const a = s.life / s.max;
+    px(s.x, s.y, 1, s.len | 0, `rgba(255,255,255,${0.4 * a})`);
+    px(s.x + 1, s.y + (s.len * 0.3) | 0, 1, (s.len * 0.5) | 0, `rgba(255,255,255,${0.2 * a})`);
+  }
+}
+
 function drawBackground() {
-  /* sky gradient */
+  const t = performance.now() / 1000;
+  /* sky gradient (5 stops for atmospheric depth: deep blue → sky → warm horizon) */
   const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0, '#6ebef0');
-  g.addColorStop(1, '#b4e6ff');
+  g.addColorStop(0,    '#4a9edc');
+  g.addColorStop(0.3,  '#7ec0e8');
+  g.addColorStop(0.65, '#b8dcf0');
+  g.addColorStop(1,    '#d8eef8');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
+  // warm horizon glow
+  const horizon = ctx.createLinearGradient(0, GROUND_Y - 100, 0, GROUND_Y);
+  horizon.addColorStop(0, 'rgba(255,200,150,0)');
+  horizon.addColorStop(1, 'rgba(255,200,150,.15)');
+  ctx.fillStyle = horizon; ctx.fillRect(0, GROUND_Y - 100, W, 100);
 
-  /* sun */
+  // sun rays (god rays from the sun position)
   const sx = W - 110, sy = 70, sr = 36;
-  px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
-  px(sx - sr + 8, sy - sr + 8, (sr - 8) * 2, (sr - 8) * 2, '#fff5b4');
-
-  /* clouds */
-  for (const c of clouds) {
-    px(c.x, c.y, c.s, 22, '#ffffff');
-    px(c.x - 14, c.y + 8, 28, 18, '#ffffff');
-    px(c.x + c.s - 18, c.y + 6, 32, 20, '#ffffff');
-    px(c.x + 20, c.y - 8, 30, 18, '#ffffff');
+  for (let i = 0; i < 5; i++) {
+    const angle = (t * 0.3 + i * 0.7) % (Math.PI * 2);
+    const len = 200 + i * 30;
+    const alpha = 0.04 + i * 0.01;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgba(255,240,180,${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(len, -8 - i * 2);
+    ctx.lineTo(len, 8 + i * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
-  /* hills */
+  // a few far clouds (parallax-slow, behind everything)
+  ctx.fillStyle = 'rgba(255,255,255,.4)';
+  for (let i = 0; i < 5; i++) {
+    const cx = (i * 280 - t * 3) % (W + 200) - 100;
+    const cy = 50 + i * 25;
+    ctx.beginPath();
+    ctx.ellipse(cx,      cy,      40, 9,  0, 0, Math.PI*2);
+    ctx.ellipse(cx + 25, cy - 3,  30, 11, 0, 0, Math.PI*2);
+    ctx.ellipse(cx - 25, cy - 1,  25, 8,  0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  /* sun (with multi-layer glow halo) */
+  px(sx - sr - 24, sy - sr - 24, (sr + 24) * 2, (sr + 24) * 2, 'rgba(255,230,130,.10)');
+  px(sx - sr - 16, sy - sr - 16, (sr + 16) * 2, (sr + 16) * 2, 'rgba(255,230,130,.18)');
+  px(sx - sr - 6,  sy - sr - 6,  (sr + 6) * 2,  (sr + 6) * 2,  'rgba(255,240,160,.25)');
+  px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
+  px(sx - sr + 4, sy - sr + 4, (sr - 4) * 2, (sr - 4) * 2, '#fff0a8');
+  px(sx - sr + 10, sy - sr + 10, (sr - 10) * 2, (sr - 10) * 2, '#fff5b4');
+  // sun face: tiny smile (kid-friendly)
+  px(sx - 4, sy + 6, 2, 2, '#7a4a10');
+  px(sx + 2, sy + 6, 2, 2, '#7a4a10');
+  px(sx - 2, sy + 10, 4, 1, '#7a4a10');
+
+  /* clouds (foreground parallax) */
+  for (const c of clouds) {
+    // soft shadow underside
+    px(c.x + 2, c.y + 20, c.s, 4, 'rgba(180,210,230,.4)');
+    // body (3 layers for depth)
+    px(c.x - 14, c.y + 8,  28, 18, '#e8f0f8');
+    px(c.x + c.s - 18, c.y + 6, 32, 20, '#e8f0f8');
+    px(c.x + 20, c.y - 8,  30, 18, '#e8f0f8');
+    px(c.x, c.y, c.s, 22, '#ffffff');
+    px(c.x + 4, c.y, c.s - 8, 6, '#ffffff');
+  }
+
+  /* birds (silhouettes, slow parallax) — small V shapes */
+  for (let i = 0; i < 3; i++) {
+    const bx = ((i * 280) - t * 8) % (W + 200) - 100;
+    const by = 100 + i * 30 + Math.sin(t + i) * 6;
+    const wing = Math.sin(t * 4 + i) * 3;
+    px(bx,        by + wing, 1, 1, '#3a3a3a');
+    px(bx + 2,    by,         1, 1, '#3a3a3a');
+    px(bx + 4,    by + wing, 1, 1, '#3a3a3a');
+    px(bx + 6,    by,         1, 1, '#3a3a3a');
+    px(bx + 8,    by + wing, 1, 1, '#3a3a3a');
+  }
+
+  /* distant hills (back, soft) */
   for (const h of hills) {
     const cx = h.x, cy = GROUND_Y, rx = h.w / 2, ry = h.h;
     for (let dx = -rx; dx <= rx; dx += 4) {
       const t = dx / rx;
       if (t * t > 1) continue;
       const yo = Math.sqrt(1 - t * t) * ry;
-      const c = lerpColor('#78c86e', '#5aa658', t);
+      const c = lerpColor('#a8d68e', '#88c870', t);
       px(cx + dx, cy - yo, 4, yo + 8, c);
+    }
+    // hill highlight
+    for (let dx = -rx; dx <= rx; dx += 8) {
+      const t = dx / rx;
+      if (t * t > 1) continue;
+      const yo = Math.sqrt(1 - t * t) * ry;
+      px(cx + dx, cy - yo, 4, 2, '#b8e094');
     }
   }
 
-  /* ground */
-  px(0, GROUND_Y, W, H - GROUND_Y, '#6ec85a');
-  px(0, GROUND_Y, W, 6, '#50a046');
+  /* ground (with grass strip) */
+  px(0, GROUND_Y, W, H - GROUND_Y, '#7ad868');
+  px(0, GROUND_Y, W, 8, '#5ba84a');
+  px(0, GROUND_Y + 8, W, 2, '#9bea86');
 
-  /* grass tufts */
-  for (const g of grass) px(g.x, g.y, 2, -g.s, '#3c8c3c');
+  /* grass tufts (with little flowers) */
+  for (const g of grass) {
+    px(g.x, g.y, 2, -g.s, '#3c8c3c');
+    px(g.x + 2, g.y - 1, 1, -(g.s - 2), '#5ba84a');
+  }
+  // occasional flowers
+  for (let i = 0; i < 12; i++) {
+    const fx = (i * 137) % W;
+    const fy = GROUND_Y - 2;
+    const fbloom = (t * 2 + i) % 2 < 1;
+    if (fbloom) {
+      px(fx, fy - 4, 3, 3, '#fff5b4');
+      px(fx + 1, fy - 3, 1, 1, '#ff8aa8');
+    }
+  }
+  // little butterflies / floating petals (kid-friendly, slow float)
+  for (let i = 0; i < 4; i++) {
+    const fx = ((i * 230) + Math.sin(t * 0.5 + i) * 20) % W;
+    const fy = GROUND_Y - 60 - Math.sin(t * 0.7 + i) * 10 + i * 12;
+    const fw = Math.sin(t * 6 + i) > 0 ? 1 : 0;  // wings flap
+    px(fx, fy, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
+    px(fx - 2, fy + fw, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
+    px(fx + 2, fy + fw, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
+  }
 }
 
 function lerpColor(a, b, t) {
@@ -524,70 +1573,192 @@ function lerpColor(a, b, t) {
 
 function drawCat() {
   const ducking = cat.duck;
-  const h = ducking ? cat.h * 0.6 : cat.h;
+  let h = ducking ? cat.h * 0.6 : cat.h;
   const x = cat.x|0, y = (ducking ? cat.y + cat.h * 0.4 : cat.y)|0;
 
-  /* shadow */
-  px(x + 6, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 12, 5, 'rgba(0,0,0,.18)');
+  // Stomp-squash: flatten the cat vertically while keeping width
+  let yStretch = 1, xStretch = 1, yOffset = 0;
+  if (cat.squash > 0) {
+    yStretch = 1 - 0.55 * cat.squash;     // compress height
+    xStretch = 1 + 0.20 * cat.squash;     // bulge width
+    yOffset  = (h - h * yStretch) | 0;    // grow downward to keep feet on the ground
+    h = (h * yStretch) | 0;
 
-  const body  = '#ffa55a';
-  const belly = '#ffdcb4';
-  const dark  = '#50321e';
-  const eye   = '#78dc3c';
-  const nose  = '#dc5a82';
+  // Falling stretch: when falling fast, the cat stretches vertically (gravity pulls)
+  if (!cat.onGround && cat.vy > 250 && !ducking) {
+    yStretch += clamp((cat.vy - 250) / 1500, 0, 0.18);  // up to 18% taller
+    xStretch -= clamp((cat.vy - 250) / 3000, 0, 0.06);  // slightly thinner
+    yOffset = (cat.h - cat.h * yStretch) | 0;
+    h = (cat.h * yStretch) | 0;
+  }
+  }
+  // breathing idle: tiny scale pulse when standing still
+  if (cat.onGround && !ducking && Math.abs(cat.vx) < 20) {
+    const breath = Math.sin(performance.now() / 700) * 0.02;
+    yStretch -= breath;
+    yOffset = (cat.h - cat.h * yStretch) | 0;
+  }
+  // invincibility flash: blink the cat on/off quickly
+  const flashOn = (cat.invincible > 0) ? (Math.floor(performance.now() / 60) % 2 === 0) : true;
+  // facing: flip the whole sprite horizontally when cat.facing === -1
+  const flip = cat.facing === -1;
+
+  /* shadow (no flip — shadow lives on the ground) */
+  px(x + 4, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 8, 5, 'rgba(0,0,0,.22)');
+  if (!flashOn) {
+    // when flashing off, just draw a yellow silhouette so the player still knows where the cat is
+    const sw = ((cat.w - 8) * xStretch) | 0;
+    const sh = ((h - 22)   * 1) | 0;
+    const sx = (x + 4 + ((cat.w - 8) - sw) / 2) | 0;
+    px(sx, y + 22 + yOffset, sw, sh, flip ? 'rgba(255,200,80,.6)' : 'rgba(255,200,80,.6)');
+    return;
+  }
+
+  // ─── Better palette ─────────────────────────────────────
+  const body   = '#ff9a4d';   // base fur (slightly more saturated)
+  const bodyHi = '#ffba7a';   // highlight
+  const bodyLo = '#d97a30';   // shadow
+  const belly  = '#ffe1c4';   // soft cream
+  const dark   = '#3d2410';   // outlines
+  const eyeBg  = '#78dc3c';   // green iris
+  const eyeHi  = '#a8f060';   // iris highlight
+  const nose   = '#dc5a82';
+  const blush  = '#ff9eb8';   // cheek
+
+  // helper: place a rect, optionally flipped on X. xStretch / yStretch resize from the top-left.
+  function p(px0, py0, pw, ph, color) {
+    if (!flip) { px(x + px0, y + py0 + yOffset, (pw * xStretch)|0, (ph * yStretch)|0, color); return; }
+    // mirrored: distance from right edge of the cat body
+    const mirrored = (cat.w - 1) - (px0 + pw);
+    const w2 = (pw * xStretch)|0;
+    px(x + mirrored + ((pw * xStretch - w2) / 2 | 0), y + py0 + yOffset, w2, (ph * yStretch)|0, color);
+  }
 
   if (!ducking) {
-    /* body */
-    px(x + 10, y + 22, cat.w - 20, cat.h - 32, body);
-    /* head */
-    px(x + 4, y, cat.w - 8, 32, body);
-    /* ears */
-    px(x + 6, y - 12, 14, 16, body);
-    px(x + cat.w - 20, y - 12, 14, 16, body);
-    px(x + 9, y - 6, 8, 8, '#ff82a0');
-    px(x + cat.w - 17, y - 6, 8, 8, '#ff82a0');
-    /* eyes — green like the sticker */
-    const eyeY = y + 8;
+    // ─── Body (rounded with hi/lo shading) ─────────────
+    p(10, 22, cat.w - 20, cat.h - 32, body);
+    p(10, 22, cat.w - 20, 3, bodyHi);                  // top highlight
+    p(10, cat.h - 12, cat.w - 20, 3, bodyLo);          // bottom shadow
+    // side dark accent (tabby side stripe)
+    p(8, 30, 4, cat.h - 40, bodyLo);
+
+    // ─── Head (rounded with cheek bulges) ─────────────
+    p(2, 0, cat.w - 4, 32, body);
+    p(2, 0, cat.w - 4, 3, bodyHi);                      // top highlight
+    p(2, 28, cat.w - 4, 4, bodyLo);                     // chin shadow
+
+    // ─── Ears (triangle-ish with pink inner) ───────────
+    p(4, -14, 16, 18, body);                            // left ear
+    p(cat.w - 20, -14, 16, 18, body);                    // right ear
+    p(7, -10, 10, 12, '#ff82a0');                       // left inner
+    p(cat.w - 17, -10, 10, 12, '#ff82a0');               // right inner
+    p(8, -8, 4, 4, '#ffc4d4');                           // left highlight
+    p(cat.w - 16, -8, 4, 4, '#ffc4d4');                  // right highlight
+
+    // ─── Cheek blush (kid-friendly touch) ──────────────
+    p(6, 22, 6, 3, blush);
+    p(cat.w - 12, 22, 6, 3, blush);
+
+    // ─── Eyes (bigger, with iris + pupil + sparkle) ─────
+    const eyeY = 8;
     if (cat.blinking) {
-      px(x + 14, eyeY + 1, 8, 2, '#000');
-      px(x + cat.w - 22, eyeY + 1, 8, 2, '#000');
+      // closed eyes — gentle curve
+      p(14, eyeY + 2, 8, 2, dark);
+      p(cat.w - 22, eyeY + 2, 8, 2, dark);
     } else {
-      px(x + 14, eyeY, 8, 6, eye);
-      px(x + cat.w - 22, eyeY, 8, 6, eye);
-      px(x + 17, eyeY + 1, 3, 4, '#000');
-      px(x + cat.w - 19, eyeY + 1, 3, 4, '#000');
-      px(x + 19, eyeY + 1, 1, 1, '#fff');
-      px(x + cat.w - 17, eyeY + 1, 1, 1, '#fff');
+      // eye whites (rim)
+      p(13, eyeY - 1, 10, 9, '#fff');
+      p(cat.w - 23, eyeY - 1, 10, 9, '#fff');
+      // green iris
+      p(14, eyeY, 8, 7, eyeBg);
+      p(cat.w - 22, eyeY, 8, 7, eyeBg);
+      // iris highlight
+      p(14, eyeY, 8, 2, eyeHi);
+      p(cat.w - 22, eyeY, 8, 2, eyeHi);
+      // pupil (slightly off-center for that "looking" feel)
+      const lookX = flip ? -1 : 1;  // look forward (opposite of facing)
+      p(15 + lookX, eyeY + 2, 4, 5, dark);
+      p(cat.w - 21 + lookX, eyeY + 2, 4, 5, dark);
+      // sparkle highlight
+      p(16 + lookX, eyeY + 1, 2, 2, '#fff');
+      p(cat.w - 20 + lookX, eyeY + 1, 2, 2, '#fff');
+      // tiny bottom sparkle
+      p(19 + lookX, eyeY + 5, 1, 1, '#fff');
+      p(cat.w - 17 + lookX, eyeY + 5, 1, 1, '#fff');
     }
-    /* nose */
-    px(x + cat.w/2 - 2, y + 18, 4, 3, nose);
-    px(x + cat.w/2, y + 21, 6, 1, dark);
-    px(x + cat.w/2 - 6, y + 21, 6, 1, dark);
-    /* whiskers */
-    px(x + 2, y + 19, 8, 1, dark);
-    px(x + 2, y + 22, 8, 1, dark);
-    px(x + cat.w - 10, y + 19, 8, 1, dark);
-    px(x + cat.w - 10, y + 22, 8, 1, dark);
-    /* belly */
-    px(x + 18, y + 32, cat.w - 36, cat.h - 38, belly);
-    /* legs (run anim) */
-    const legY = y + cat.h - 18;
-    const off  = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 0;
-    px(x + 16 + off, legY, 8, 18, body);
-    px(x + cat.w - 24 - off, legY, 8, 18, body);
-    /* tail */
-    const tw = Math.round(Math.sin(cat.anim) * 6);
-    px(x + cat.w - 6, y + 24 + tw, 12, 8, body);
-    px(x + cat.w - 2, y + 18 + tw, 8, 10, body);
+
+    // ─── Nose (cute triangle) ─────────────
+    p(cat.w/2 - 2, 18, 4, 3, nose);
+    p(cat.w/2 - 1, 21, 2, 1, dark);
+
+    // ─── Mouth (smiley) ─────────────
+    p(cat.w/2, 22, 5, 1, dark);
+    p(cat.w/2 - 5, 22, 5, 1, dark);
+    p(cat.w/2 - 1, 23, 1, 1, '#ff8aa8');
+
+    // ─── Whiskers (longer + slightly curved) ─────────────
+    p(0, 19, 10, 1, dark);
+    p(0, 22, 10, 1, dark);
+    p(cat.w - 10, 19, 10, 1, dark);
+    p(cat.w - 10, 22, 10, 1, dark);
+
+    // ─── Belly (cream patch with subtle outline) ─────────────
+    p(18, 32, cat.w - 36, cat.h - 38, belly);
+    p(18, 32, cat.w - 36, 2, '#fff0db');                // belly highlight
+
+    // ─── Tabby stripes (the orange-kitty signature) ─────────────
+    p(16, 26, 6, 2, bodyLo);
+    p(cat.w - 22, 26, 6, 2, bodyLo);
+    p(20, 38, 5, 2, bodyLo);
+    p(cat.w - 25, 38, 5, 2, bodyLo);
+    p(18, 48, 6, 2, bodyLo);
+    p(cat.w - 24, 48, 6, 2, bodyLo);
+
+    // ─── Legs (run anim: front leg forward, back leg back) ─────────────
+    const legY = cat.h - 18;
+    const stride = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 3;
+    p(16 + stride, legY, 8, 18, body);
+    p(cat.w - 24 - stride, legY, 8, 18, body);
+    // paw shadows
+    p(16 + stride, legY + 16, 8, 2, bodyLo);
+    p(cat.w - 24 - stride, legY + 16, 8, 2, bodyLo);
+    // toe details
+    p(16 + stride, legY + 12, 2, 1, dark);
+    p(20 + stride, legY + 12, 2, 1, dark);
+    p(24 + stride, legY + 12, 2, 1, dark);
+    p(cat.w - 24 - stride, legY + 12, 2, 1, dark);
+    p(cat.w - 20 - stride, legY + 12, 2, 1, dark);
+    p(cat.w - 16 - stride, legY + 12, 2, 1, dark);
+
+    // ─── Tail (multi-segment with smooth wave) ─────────────
+    const tw1 = Math.round(Math.sin(cat.anim) * 6);
+    const tw2 = Math.round(Math.sin(cat.anim * 1.3 + 1) * 5);
+    const tw3 = Math.round(Math.sin(cat.anim * 1.7 + 2) * 4);
+    p(cat.w - 4,  26 + tw1, 10, 8, body);
+    p(cat.w + 2,  22 + tw2, 8, 7, body);
+    p(cat.w + 6,  18 + tw3, 6, 6, body);
+    // tail tip (lighter)
+    p(cat.w + 9,  17 + tw3, 5, 4, '#ffb27a');
   } else {
-    /* ducking */
-    const dy = cat.y + cat.h * 0.66;
-    px(x + 8, dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
-    px(x + 4, dy - 4, cat.w - 8, 16, body);
-    px(x + 8, dy - 10, 8, 8, body);
-    px(x + cat.w - 16, dy - 10, 8, 8, body);
-    px(x + cat.w - 18, dy + 1, 6, 4, eye);
-    px(x + cat.w - 16, dy + 2, 2, 2, '#000');
+    // ─── Ducking (low profile, no tail) ─────────────
+    const dy = 46;
+    p(8,  dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
+    p(4,  dy - 4, cat.w - 8,  16, body);
+    p(4,  dy - 4, cat.w - 8, 2, bodyHi);
+    p(8,  dy - 10, 8, 8, body);
+    p(cat.w - 16, dy - 10, 8, 8, body);
+    p(7,  dy - 7, 4, 4, '#ff82a0');
+    p(cat.w - 15, dy - 7, 4, 4, '#ff82a0');
+    p(cat.w - 18, dy + 1, 6, 4, eyeBg);
+    p(cat.w - 16, dy + 2, 2, 2, dark);
+    p(cat.w - 16, dy + 1, 1, 1, '#fff');                // eye sparkle
+  }
+
+  // ─── Running dust (when moving fast on ground) ─────────────
+  if (cat.onGround && Math.abs(cat.vx) > 250 && (performance.now() % 200) < 60) {
+    const dx = flip ? 12 : cat.w - 16;
+    px(x + dx, cat.y + cat.h - 4, 4, 3, 'rgba(220,220,220,.6)');
+    px(x + dx + (flip ? -6 : 6), cat.y + cat.h - 6, 3, 2, 'rgba(220,220,220,.4)');
   }
 }
 
@@ -648,6 +1819,422 @@ function drawPickups() {
   }
 }
 
+/* ---------- Platform-mode drawing (DK-style) ---------- */
+function drawPlatforms() {
+  // SNES-jungle platforms: carved earth/rock with chiseled edges, dirt on top,
+  // ferns growing on the surface, dimensional rock face.
+  for (let i = 0; i < platforms.length; i++) {
+    const p = platforms[i];
+    const isFloor = (i === 0);
+    if (!isFloor) {
+      // soft drop shadow under floating platforms
+      px(p.x + 4, p.y + 18, p.w - 8, 6, 'rgba(0,0,0,.22)');
+      px(p.x + 10, p.y + 24, p.w - 20, 4, 'rgba(0,0,0,.12)');
+    }
+    // ─── Rock face body (4 horizontal bands for chiseled depth) ───
+    px(p.x, p.y,     p.w, 1, '#a07040');   // bright top edge
+    px(p.x, p.y + 1, p.w, 3, '#7a4f28');   // upper face
+    px(p.x, p.y + 4, p.w, 5, '#5a3818');   // main
+    px(p.x, p.y + 9, p.w, 4, '#3a2208');   // dark
+    px(p.x, p.y + 13, p.w, 1, '#1a0c04');  // bottom shadow
+    // vertical chiseled highlights (3-4 streaks per platform)
+    for (let cx = p.x + 6; cx < p.x + p.w - 6; cx += 18) {
+      px(cx, p.y + 1, 1, 5, 'rgba(180,120,60,.5)');   // mid highlight
+    }
+    // little rock chunks embedded in the face
+    for (let cx = p.x + 10; cx < p.x + p.w - 10; cx += 30) {
+      const rx = cx + ((cx * 7) % 8);
+      px(rx, p.y + 5, 4, 3, '#3a2208');
+      px(rx, p.y + 5, 4, 1, '#6a4820');
+    }
+    // end caps (carved-edge look)
+    px(p.x,         p.y + 1, 3, 13, '#2a1408');
+    px(p.x + 1,     p.y + 1, 1, 4,  '#6a4820');
+    px(p.x + p.w - 3, p.y + 1, 3, 13, '#2a1408');
+    px(p.x + p.w - 2, p.y + 1, 1, 4,  '#6a4820');
+    if (!isFloor) {
+      // ─── Dirt strip on top of the floating platform (4 layers) ───
+      px(p.x, p.y - 6, p.w, 2, '#7a4f28');   // dirt dark
+      px(p.x, p.y - 4, p.w, 4, '#5a3818');   // dirt main
+      // grass top
+      px(p.x, p.y - 2, p.w, 2, '#3a8a30');
+      px(p.x, p.y - 1, p.w, 1, '#5ac84a');   // bright top
+      // little grass blades on top
+      for (let gx = p.x + 4; gx < p.x + p.w - 4; gx += 12) {
+        const bladeH = 3 + ((gx * 7) % 4);
+        px(gx, p.y - 2 - bladeH, 1, bladeH, '#3a8a30');
+        px(gx + 1, p.y - 2 - bladeH + 1, 1, bladeH - 1, '#5ac84a');
+      }
+      // a tiny fern on some platforms
+      if ((i % 2) === 1 && p.w > 80) {
+        drawFern(p.x + p.w - 18, p.y - 2, 12);
+      }
+      // a banana on some platforms
+      if ((i % 3) === 0 && p.w > 100) {
+        drawBanana(p.x + 14, p.y - 8);
+        drawBanana(p.x + 22, p.y - 6);
+      }
+    }
+    if (isFloor) {
+      // top of the floor — thicker grass strip
+      px(0, p.y, W, 4, '#3a8a30');
+      px(0, p.y + 4, W, 2, '#5ac84a');
+      px(0, p.y - 2, W, 2, '#2a6a20');
+      // grass blades poking up
+      for (let gx = 0; gx < W; gx += 14) {
+        const bladeH = 4 + ((gx * 7) % 5);
+        px(gx, p.y - bladeH, 1, bladeH, '#3a8a30');
+        px(gx + 1, p.y - bladeH + 1, 1, bladeH - 1, '#5ac84a');
+      }
+    }
+  }
+  // ─── Ladders (vines + wooden rungs) ───
+  for (const l of ladders) {
+    const rungs = Math.floor((l.top - l.bottom) / 16);
+    // rails (twisted vine look)
+    px(l.x,      l.bottom, 4, l.top - l.bottom, '#5a3818');
+    px(l.x + 1,  l.bottom, 2, l.top - l.bottom, '#8a5a28');
+    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#5a3818');
+    px(l.x + 18, l.bottom, 2, l.top - l.bottom, '#8a5a28');
+    // rungs (carved wood)
+    for (let r = 0; r <= rungs; r++) {
+      const ry = l.bottom + r * 16;
+      px(l.x + 2, ry, 16, 2, '#3a2208');
+      px(l.x + 2, ry, 16, 1, '#7a4f28');
+    }
+  }
+}
+
+function drawLevelItems() {
+  for (const it of levelItems) {
+    if (it.taken) continue;
+    const yOff = Math.sin(it.bob) * 3;
+    const pulse = 0.6 + Math.sin(it.bob * 2) * 0.3;
+    if (it.kind === 'fish') {
+      const x = it.x, y = it.y + yOff;
+      // ─── Pulsing glow halo ───
+      const haloR = 16 + Math.sin(it.bob * 2) * 3;
+      px(x - haloR/2 + 8, y - haloR/2 + 6, haloR, haloR, `rgba(255,240,120,${0.18 * pulse})`);
+      px(x - haloR/3 + 8, y - haloR/3 + 6, haloR*0.66, haloR*0.66, `rgba(255,220,100,${0.25 * pulse})`);
+      // ─── Fish body ───
+      px(x + 2, y + 4, 20, 14, '#50b4e6');
+      px(x + 2, y + 4, 20, 3, '#7ad0f0');                 // top highlight
+      px(x + 2, y + 15, 20, 3, '#3090c4');                 // bottom shadow
+      // tail
+      px(x - 2, y + 4, 6, 8, '#dc8c28');
+      px(x - 4, y + 5, 4, 6, '#dc8c28');
+      px(x - 2, y + 4, 2, 8, '#ffae3d');                  // tail highlight
+      // top fin
+      px(x + 8, y, 5, 5, '#dc8c28');
+      // eye
+      px(x + 14, y + 6, 4, 4, '#fff');
+      px(x + 15, y + 7, 2, 2, '#000');
+      px(x + 15, y + 7, 1, 1, '#fff');                     // sparkle
+      // gill
+      px(x + 10, y + 8, 1, 6, '#286eb4');
+      // smile
+      px(x + 12, y + 11, 4, 1, '#000');
+    } else if (it.kind === 'banana') {
+      const x = it.x, y = it.y + yOff;
+      // glow
+      px(x - 4, y - 4, 24, 20, `rgba(255,220,80,${0.22 * pulse})`);
+      // banana body (curved via 2-stop)
+      px(x,     y + 2, 14, 6, '#ffd84a');
+      px(x + 2, y,     10, 8, '#ffe874');                  // upper highlight
+      px(x,     y + 6, 14, 2, '#c0a020');                  // shadow
+      // stem
+      px(x + 12, y - 2, 6, 4, '#7a5a10');
+      px(x + 13, y - 2, 3, 4, '#5a3a08');                  // stem shadow
+      // tip
+      px(x,     y + 2, 2, 6, '#7a5a10');
+    } else if (it.kind === 'yarn') {
+      const x = it.x, y = it.y + yOff;
+      // glow
+      px(x - 6, y - 4, 32, 24, `rgba(255,160,200,${0.22 * pulse})`);
+      // ball
+      px(x,     y,     20, 16, '#ff7ab0');
+      px(x,     y,     20, 3,  '#ff9ec4');                  // top highlight
+      px(x,     y + 13, 20, 3, '#d65a8a');                  // bottom shadow
+      // swirl lines (yarn texture)
+      px(x + 3, y + 4,  10, 1, '#fff0f6');
+      px(x + 6, y + 8,  8,  1, '#d65a8a');
+      px(x + 4, y + 11, 9,  1, '#fff0f6');
+      // center accent
+      px(x + 6, y + 4,  8,  8, '#ffd0e0');
+      // trailing string
+      px(x - 2, y + 14, 2, 2, '#ff7ab0');
+      px(x - 5, y + 16, 3, 2, '#ff7ab0');
+      px(x - 8, y + 18, 2, 2, '#ff7ab0');
+    }
+  }
+}
+
+function drawBarrels() {
+  for (const b of barrels) {
+    // shadow
+    px(b.x + 2, b.y + b.h - 3, b.w - 4, 2, 'rgba(0,0,0,.25)');
+    // barrel body (DK-style brown barrel with metal bands)
+    px(b.x + 2, b.y + 2, b.w - 4, b.h - 4, '#9a5020');
+    px(b.x, b.y + 4, b.w, 3, '#5b2a10');
+    px(b.x, b.y + b.h - 8, b.w, 3, '#5b2a10');
+    px(b.x + 2, b.y + 2, b.w - 4, 2, '#c07040');
+    // highlight
+    px(b.x + 4, b.y + 2, 2, b.h - 4, '#c08050');
+  }
+}
+
+function drawGoal() {
+  if (!goal) return;
+  // a colorful waving pennant on a pole (DK-style Pauline rescue cue)
+  const gx = goal.x, gy = goal.y;
+  // base (stand)
+  px(gx + 24, gy + goal.h, 12, 4, '#5a3a10');
+  px(gx + 26, gy + goal.h, 8, 2, '#3a2410');
+  // pole (with highlight)
+  px(gx + 28, gy, 4, goal.h, '#8a6028');
+  px(gx + 28, gy, 1, goal.h, '#aa7838');                  // left highlight
+  px(gx + 31, gy, 1, goal.h, '#5a3a18');                  // right shadow
+  // flag pole top (gold ball)
+  px(gx + 27, gy - 4, 6, 6, '#ffd86b');
+  px(gx + 28, gy - 3, 4, 4, '#ffe874');
+  // ─── Waving pennant (4 colored stripes, with wave) ───
+  const t = performance.now() / 400;
+  for (let i = 0; i < 26; i++) {
+    const wy = Math.sin(t + i * 0.3) * 1.5;
+    if (i < 9)       px(gx + 4 + i, gy + wy,     1, 14, '#ff4d6d');
+    else if (i < 14) px(gx + 4 + i, gy + 14 + wy, 1, 4,  '#ffd86b');
+    else             px(gx + 4 + i, gy + 18 + wy, 1, 2,  '#7ab8ff');
+  }
+  // "GOAL" text on the red part
+  px(gx + 8,  gy + 4,  2, 6, '#fff');
+  px(gx + 12, gy + 4,  2, 6, '#fff');
+  px(gx + 16, gy + 4,  2, 6, '#fff');
+  px(gx + 20, gy + 4,  2, 6, '#fff');
+  // ─── Sparkles around the goal ───
+  for (let i = 0; i < 5; i++) {
+    const a = (t * 2 + i * 1.3) % (Math.PI * 2);
+    const sx = gx + 18 + Math.cos(a) * 22;
+    const sy = gy + 10 + Math.sin(a) * 12;
+    const sz = i % 2 ? 3 : 2;
+    px(sx, sy, sz, sz, '#fff5b4');
+    // small star arms
+    if (i % 2 === 0) {
+      px(sx - 3, sy + 1, 2, 1, '#fff5b4');
+      px(sx + sz + 1, sy + 1, 2, 1, '#fff5b4');
+      px(sx + 1, sy - 3, 1, 2, '#fff5b4');
+      px(sx + 1, sy + sz + 1, 1, 2, '#fff5b4');
+    }
+  }
+}
+
+/* DK-style sky (no scrolling; deep purple-ish at the top) */
+/* ============================================================================
+   PLATFORM-MODE BACKGROUND — rich DK-style night city with multiple parallax
+   layers, animated stars, shooting stars, fireflies, fog, and a giant moon.
+   Each layer scrolls at a different speed (none, very slow, slow, fast) to
+   create the illusion of depth.
+   ============================================================================ */
+const _shootingStars = [];
+const _fireflies = [];
+
+/* ============================================================================
+   SNES-STYLE SPRITE PRIMITIVES
+   Pre-rendered shapes with highlights and shadows. Each "leaf cluster" is
+   several overlapping ellipses with different greens, like a DKC background.
+   ============================================================================ */
+function drawLeafCluster(cx, cy, scale, hue) {
+  // hue 0=lime, 1=jungle-green, 2=dark, 3=lime-light
+  const cols = [
+    [ 60, 130,  40],   // dark base
+    [ 90, 170,  60],   // mid
+    [140, 210,  80],   // highlight
+    [180, 230, 110],   // light highlight
+  ];
+  // 3-5 overlapping leaves in a fan
+  const n = 3 + (scale * 2 | 0);
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI/2 + (i - n/2) * 0.5;
+    const r = 6 + (i % 3) * 2;
+    const lx = cx + Math.cos(a) * 4 * scale;
+    const ly = cy + Math.sin(a) * 4 * scale;
+    const c = cols[(i + hue) % cols.length];
+    ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, r * scale, r * 0.6 * scale, a, 0, Math.PI*2);
+    ctx.fill();
+    // leaf vein highlight
+    ctx.fillStyle = `rgba(200,240,150,.4)`;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly - 1, r * scale * 0.6, 1, a, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function drawVine(x, y, len, sway) {
+  // hanging vine: wavy line
+  ctx.strokeStyle = '#2a4a18';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (let i = 0; i <= len; i += 4) {
+    const xx = x + Math.sin((i + sway) * 0.1) * 4;
+    ctx.lineTo(xx, y + i);
+  }
+  ctx.stroke();
+  // leaf at the tip
+  drawLeafCluster(x + Math.sin((len + sway) * 0.1) * 4, y + len, 1.2, 1);
+}
+
+function drawBanana(x, y) {
+  // yellow crescent banana with a brown tip
+  ctx.fillStyle = '#f5c020';
+  ctx.beginPath();
+  ctx.ellipse(x, y, 5, 8, -0.4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#a07010';
+  px(x - 4, y - 4, 2, 2, '#7a5010');   // stem
+  ctx.fillStyle = '#ffe060';
+  ctx.beginPath();
+  ctx.ellipse(x - 1, y, 2, 5, -0.4, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawFern(x, y, h) {
+  // frond: a curve of small leaves
+  ctx.fillStyle = '#3a8020';
+  for (let i = 0; i < h; i += 3) {
+    const sway = Math.sin(i * 0.3) * 4;
+    ctx.beginPath();
+    ctx.ellipse(x + sway - 3, y - i, 3, 1.5, -0.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + sway + 3, y - i, 3, 1.5, 0.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // central stem
+  ctx.fillStyle = '#2a5018';
+  ctx.fillRect(x - 1, y - h, 2, h);
+}
+
+function drawPlatformBackground() {
+  const t = performance.now() / 1000;
+
+  // ─── Sky gradient (only a sliver visible at the top) ───
+  const g = ctx.createLinearGradient(0, 0, 0, 200);
+  g.addColorStop(0,    '#2a1a4a');
+  g.addColorStop(0.4,  '#5a3a6a');
+  g.addColorStop(1,    '#a06050');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 200);
+
+  // ─── Tree trunk silhouettes (very far) ───
+  ctx.fillStyle = '#1a2a18';
+  for (let i = 0; i < 8; i++) {
+    const tx = (i * 130) - (t * 3) % (W + 200);
+    const th = 120 + Math.sin(i) * 30;
+    ctx.fillRect(tx, 0, 30, th);
+  }
+  // distant banana bunches peeking above the canopy
+  for (let i = 0; i < 4; i++) {
+    const bx = (i * 220 + 60) - (t * 4) % (W + 200);
+    drawBanana(bx, 30 + i * 5);
+    drawBanana(bx + 6, 34 + i * 5);
+  }
+
+  // ─── Far jungle canopy (layer 1 — slowest parallax, dark green) ───
+  for (let i = 0; i < 16; i++) {
+    const cx = (i * 65) - (t * 5) % 80;
+    const cy = 90 + Math.sin(i * 0.7) * 8;
+    drawLeafCluster(cx, cy, 1.6, 2);   // dark green
+  }
+
+  // ─── Mid canopy (layer 2 — medium parallax, mid green) ───
+  for (let i = 0; i < 14; i++) {
+    const cx = (i * 75) - (t * 9) % 100;
+    const cy = 130 + Math.sin(i * 0.9) * 6;
+    drawLeafCluster(cx, cy, 1.8, 1);   // jungle-green
+  }
+
+  // ─── Hanging vines (from canopy down toward middle of screen) ───
+  for (let i = 0; i < 5; i++) {
+    const vx = (i * 190 + 40) - (t * 6) % 200;
+    if (vx > -20 && vx < W + 20) {
+      drawVine(vx, 100 + i * 5, 60 + i * 8, t * 30 + i);
+    }
+  }
+
+  // ─── Big ferns in the mid-ground ───
+  for (let i = 0; i < 6; i++) {
+    const fx = (i * 165 + 50) - (t * 12) % (W + 100);
+    if (fx > -30 && fx < W + 30) {
+      drawFern(fx, GROUND_Y - 40, 30 + (i % 3) * 10);
+    }
+  }
+
+  // ─── Front canopy (layer 3 — fastest, lime highlight) ───
+  for (let i = 0; i < 12; i++) {
+    const cx = (i * 85) - (t * 16) % 120;
+    const cy = 170 + Math.sin(i * 1.1 + t) * 4;
+    drawLeafCluster(cx, cy, 2.2, 0);   // lime green (front, bright)
+    drawLeafCluster(cx + 20, cy + 4, 1.4, 3);  // lime-light mix
+  }
+
+  // ─── Background dirt wall behind the platforms (texture) ───
+  ctx.fillStyle = '#3a2418';
+  ctx.fillRect(0, GROUND_Y - 100, W, 100);
+  // dirt speckles for texture
+  for (let i = 0; i < 60; i++) {
+    const dx = (i * 47) % W;
+    const dy = GROUND_Y - 90 + (i * 19) % 80;
+    px(dx, dy, 2, 2, i % 3 === 0 ? '#5a3a20' : '#2a1a08');
+  }
+  // a few small rocks embedded
+  for (let i = 0; i < 8; i++) {
+    const rx = (i * 113 + 30) % W;
+    const ry = GROUND_Y - 30 - (i * 7) % 40;
+    px(rx, ry, 6, 5, '#5a4030');
+    px(rx, ry, 6, 1, '#6a5040');  // top highlight
+    px(rx, ry + 4, 6, 1, '#1a0a04');  // bottom shadow
+  }
+
+  // ─── Floor (the actual ground) — dirt with grass top ───
+  px(0, GROUND_Y, W, H - GROUND_Y, '#5a3a20');
+  px(0, GROUND_Y, W, 6, '#3a8a30');   // grass top
+  px(0, GROUND_Y, W, 2, '#5ac84a');   // grass highlight
+  // dirt texture on floor
+  for (let i = 0; i < 80; i++) {
+    const dx = (i * 23) % W;
+    const dy = GROUND_Y + 8 + (i * 11) % 50;
+    px(dx, dy, 1, 1, i % 4 === 0 ? '#3a2410' : '#7a5028');
+  }
+  // little grass blades
+  for (let i = 0; i < 30; i++) {
+    const gx = (i * 37) % W;
+    px(gx, GROUND_Y - 4, 1, 5, '#3a8a30');
+    px(gx + 1, GROUND_Y - 3, 1, 4, '#5ac84a');
+  }
+
+  // ─── A few fireflies for life ───
+  if (Math.random() < 0.05) {
+    _fireflies.push({
+      x: rand(0, W), y: rand(50, GROUND_Y - 100),
+      phase: rand(0, Math.PI*2),
+      color: Math.random() < 0.5 ? '#ffe680' : '#a0ffb0',
+      life: rand(4, 7),
+    });
+  }
+  for (let i = _fireflies.length - 1; i >= 0; i--) {
+    const f = _fireflies[i];
+    f.life -= 0.016;
+    if (f.life <= 0) { _fireflies.splice(i, 1); continue; }
+    f.x += Math.sin(t * 1.5 + f.phase) * 0.4;
+    f.y += Math.cos(t * 1.2 + f.phase * 0.7) * 0.3;
+    const pulse = 0.5 + Math.sin(t * 4 + f.phase) * 0.5;
+    px(f.x - 3, f.y - 3, 7, 7, `rgba(255,230,128,${0.15 * pulse})`);
+    px(f.x - 2, f.y - 2, 5, 5, `rgba(255,230,128,${0.3 * pulse})`);
+    px(f.x, f.y, 1, 1, f.color);
+  }
+}
+
 function drawParticles() {
   for (const p of particles) {
     const a = clamp(p.life / p.max, 0, 1);
@@ -679,9 +2266,19 @@ function draw() {
     const m = world.shake * 24;
     ctx.translate((Math.random()*2-1) * m, (Math.random()*2-1) * m);
   }
-  drawBackground();
-  drawPickups();
-  drawObstacles();
+  if (world.mode === 'platform') {
+    drawPlatformBackground();
+    drawLevelItems();
+    drawBarrels();
+    drawPlatforms();
+    drawObstacles();   // dogs
+    drawGoal();
+  } else {
+    drawBackground();
+    drawPickups();
+    drawObstacles();
+  }
+  drawAirStreaks();   // whoosh lines when falling fast
   drawCat();
   drawParticles();
   drawPops();
@@ -711,9 +2308,17 @@ requestAnimationFrame(update);
 window.__catRunner = {
   start: startGame,
   restart,
-  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, best: world.best }),
+  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, stomps: world.stomps, best: world.best }),
   jump: catJump,
 };
+window.__cat = cat;        // read-only debug hook for tests
+window.__world = world;
+window.__obstacles = obstacles;
+window.__platforms = platforms;
+window.__ladders = ladders;
+window.__levelItems = levelItems;
+window.__barrels = barrels;
+window.__goal = () => goal;
 </script>
 </body>
 </html>
