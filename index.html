@@ -2111,6 +2111,52 @@ function drawFern(x, y, h) {
   ctx.fillRect(x - 1, y - h, 2, h);
 }
 
+/* ============================================================================
+   MOUNTAIN CHARACTERS — little pixel people who live on the mountain
+   peaks. Each one has its own wave cycle and color. They wave HIGHER and
+   FASTER when the player is in the air (jumping) — a call-and-response
+   "yay! jump!" moment. Drawn big enough to actually see.
+   ============================================================================ */
+function drawMountainCharacter(x, y, t, palette, phase) {
+  // palette = {body, head, accent}; phase = offset so each character
+  // waves on its own beat. Wave frequency bumps up if the cat is
+  // jumping (caller passes a higher t-rate when cat is airborne).
+  const wave = Math.sin(t * 3 + phase);
+  const bigWave = Math.max(0, wave);
+  // ─── Person is ~10px wide, ~14px tall — clearly visible at a distance ───
+  // hat/cap (2x2, accent color) — adds character
+  px(x - 3, y - 14, 6, 2, palette.accent);
+  // head (6x4)
+  px(x - 3, y - 12, 6, 4, palette.head);
+  // tiny eyes
+  px(x - 1, y - 11, 1, 1, '#1a1a1a');
+  px(x + 1, y - 11, 1, 1, '#1a1a1a');
+  // smiling mouth
+  px(x - 1, y - 9, 3, 1, '#1a1a1a');
+  // body / shirt (6x5)
+  px(x - 3, y - 8, 6, 5, palette.body);
+  // belt
+  px(x - 3, y - 4, 6, 1, '#1a1a1a');
+  // legs (3x3 each)
+  px(x - 3, y - 3, 3, 3, palette.body);
+  px(x,     y - 3, 3, 3, palette.body);
+  // left arm (static, hanging down) — body color
+  px(x - 4, y - 7, 1, 4, palette.body);
+  // right arm (waving) — position oscillates UP
+  const armH = Math.round(bigWave * 6);    // 0..6 pixels raised
+  const armX = x + 3;
+  const armY = y - 8 - armH;
+  px(armX, armY,     1, 1, palette.body);
+  px(armX, armY + 1, 1, 1, palette.body);
+  // hand
+  px(armX, armY - 1, 1, 1, palette.head);
+  // a tiny "hello" sparkle when the wave is high
+  if (bigWave > 0.6) {
+    px(x - 4, y - 15, 1, 1, '#ffe680');
+    px(x + 4, y - 15, 1, 1, '#ffe680');
+  }
+}
+
 function drawPlatformBackground() {
   const t = performance.now() / 1000;
 
@@ -2163,17 +2209,37 @@ function drawPlatformBackground() {
     px(s.x, s.y, 2, 2, `rgba(255,255,255,${a})`);
   }
 
-  // ─── Distant mountain silhouette (back layer, slow parallax) ───
+  // ─── Distant mountain silhouette (back layer, slow parallax) — with
+  //     tiny pixel characters perched on the peaks who wave back at the
+  //     player. Characters wave FASTER when the cat is in the air. ───
   ctx.fillStyle = '#1a2050';
+  const charPalettes = [
+    { body: '#e8a040', head: '#f4c878', accent: '#ffe680' },   // orange shirt
+    { body: '#5a8a4a', head: '#a0d890', accent: '#ffe680' },   // green shirt
+    { body: '#a050a0', head: '#d090d0', accent: '#ffe680' },   // purple shirt
+    { body: '#c04848', head: '#f08080', accent: '#ffe680' },   // red shirt
+    { body: '#4a78b8', head: '#80b0e0', accent: '#ffe680' },   // blue shirt
+  ];
+  // Detect if the cat is in the air (for the wave-rate boost)
+  const catInAir = (typeof cat !== 'undefined' && cat && !cat.onGround);
+  let charIdx = 0;
   for (let x = -50; x < W + 50; x += 60) {
     const mx = x - (t * 2) % 60;
-    const mh = 80 + Math.sin(x * 0.07) * 25;
+    const mh = 60 + Math.sin(x * 0.07) * 25;
     ctx.beginPath();
     ctx.moveTo(mx, 180);
     ctx.lineTo(mx + 30, 180 - mh);
     ctx.lineTo(mx + 60, 180);
     ctx.closePath();
     ctx.fill();
+    // place a tiny character on every other peak so they don't crowd
+    if ((x / 60) % 2 === 0) {
+      const palette = charPalettes[charIdx % charPalettes.length];
+      charIdx++;
+      const phase = (x * 0.7);
+      // character stands on TOP of the peak (so it's not buried)
+      drawMountainCharacter(mx + 30, 180 - mh, catInAir ? t * 2.5 : t, palette, phase);
+    }
   }
 
   // ─── Misty valley band (atmospheric depth just above the canopy) ───
@@ -2197,20 +2263,9 @@ function drawPlatformBackground() {
     drawBanana(bx + 6, 39 + i * 4);
   }
 
-  // ─── Far jungle canopy (layer 1 — slowest parallax, dark green) — kept
-  //     HIGH in the sky so it never overlaps the platforms
-  for (let i = 0; i < 16; i++) {
-    const cx = (i * 65) - (t * 5) % 80;
-    const cy = 40 + Math.sin(i * 0.7) * 5;
-    drawLeafCluster(cx, cy, 1.4, 2);   // dark green
-  }
-
-  // ─── Mid canopy (layer 2 — medium parallax, mid green) — kept HIGH too ───
-  for (let i = 0; i < 14; i++) {
-    const cx = (i * 75) - (t * 9) % 100;
-    const cy = 80 + Math.sin(i * 0.9) * 4;
-    drawLeafCluster(cx, cy, 1.4, 1);   // jungle-green
-  }
+  // (Far/mid leaf clusters removed — the operator found the floating
+  //  leaves too busy. The mountains below carry the visual interest
+  //  with their tiny waving characters.)
 
   // ─── Hanging vines (from canopy down toward middle of screen) ───
   for (let i = 0; i < 5; i++) {
@@ -2227,15 +2282,10 @@ function drawPlatformBackground() {
       drawFern(fx, GROUND_Y - 40, 30 + (i % 3) * 10);
     }
   }
-
-  // ─── Front canopy (layer 3 — fastest, lime highlight) — stays HIGH to
-  //     leave the moon + stars + mountains visible in the upper sky
-  for (let i = 0; i < 10; i++) {
-    const cx = (i * 95) - (t * 16) % 120;
-    const cy = 90 + Math.sin(i * 1.1 + t) * 3;
-    drawLeafCluster(cx, cy, 1.6, 0);   // lime green (front, bright, smaller)
-    drawLeafCluster(cx + 24, cy + 4, 1.0, 3);  // lime-light mix
-  }
+  // (Front canopy with flying leaves removed — the operator found the
+  //  large lime-green leaf clusters too busy. The far + mid canopy
+  //  layers above are enough to suggest a jungle without crowding
+  //  the play area.)
 
   // ─── Misty band along the bottom of the canopy (so the green doesn't
   //     end abruptly against the platforms) ───
