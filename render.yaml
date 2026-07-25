@@ -1,0 +1,21 @@
+# Render Static Site declaration for Annabelle's Cat Runner
+# This file is consumed by Render when the Static Site is created
+# (it is NOT used for "Blueprint" infra-as-code deploys per the standing
+#  rule — services are managed manually from the Render dashboard).
+#
+# Reference: https://render.com/docs/static-sites
+services:
+  - type: static_site
+    name: annabelle-catgame
+    runtime: static
+    autoDeploy: false          # deploys are triggered manually from Render's side
+    buildCommand: ""           # no build step — index.html ships as-is
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=300
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

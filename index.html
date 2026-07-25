@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🐱 Annabelle's Cat Runner</title>
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🐱</text></svg>" />
+  <style>
+    :root {
+      --sky-1: #6ebef0;
+      --sky-2: #b4e6ff;
+      --grass: #6ec85a;
+      --grass-dark: #50a046;
+      --ink: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 60%, #d6f1ff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      overflow: hidden;
+      -webkit-user-select: none; user-select: none;
+      touch-action: manipulation;
+    }
+    .wrap {
+      position: fixed; inset: 0;
+      display: grid; place-items: center;
+    }
+    .stage {
+      position: relative;
+      width: min(100vw, 1000px);
+      aspect-ratio: 900 / 500;
+      max-height: 100vh;
+      box-shadow: 0 20px 60px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.4) inset;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #87CEEB;
+    }
+    canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+    .hud {
+      position: absolute; top: 12px; left: 14px; right: 14px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      pointer-events: none;
+      font-weight: 800;
+      text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+      letter-spacing: .5px;
+    }
+    .hud .panel { display: flex; gap: 14px; flex-wrap: wrap; }
+    .badge {
+      background: rgba(255,255,255,.6);
+      backdrop-filter: blur(4px);
+      border: 2px solid rgba(0,0,0,.1);
+      padding: 6px 12px; border-radius: 999px;
+      font-size: clamp(12px, 2.2vw, 16px);
+    }
+    .title {
+      position: absolute; bottom: 12px; left: 0; right: 0; text-align: center;
+      font-size: clamp(11px, 1.8vw, 13px);
+      color: rgba(31,41,55,.75);
+      pointer-events: none;
+    }
+    .overlay {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: rgba(0,0,0,.55);
+      color: #fff; text-align: center;
+      backdrop-filter: blur(2px);
+      transition: opacity .25s ease;
+    }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .card {
+      background: linear-gradient(160deg, #fff7e6, #ffe2b0);
+      color: #4a2a0a;
+      padding: 28px 36px;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+      max-width: 90%;
+      border: 4px solid #5b3a14;
+    }
+    .card h1 { margin: 0 0 6px; font-size: clamp(22px, 4.2vw, 36px); }
+    .card p  { margin: 4px 0; font-size: clamp(13px, 2.2vw, 16px); }
+    .keys { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+    .key {
+      background: #fff; border: 2px solid #5b3a14; border-bottom-width: 4px;
+      padding: 6px 10px; border-radius: 8px; font-weight: 800; font-size: 13px;
+      min-width: 38px;
+    }
+    .btn {
+      display: inline-block; margin-top: 12px;
+      background: #ff8a3d; color: #fff;
+      border: none; border-bottom: 4px solid #c95c1a;
+      padding: 10px 22px; border-radius: 999px;
+      font-weight: 800; font-size: 15px; cursor: pointer;
+      transition: transform .08s ease;
+    }
+    .btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+    .credits {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      font-weight: 900; font-size: clamp(14px, 2.4vw, 18px);
+      color: #fff; text-shadow: 3px 3px 0 #5b3a14, -1px -1px 0 #5b3a14;
+      letter-spacing: 1px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="stage" id="stage">
+      <canvas id="game" width="900" height="500"></canvas>
+      <div class="credits">🐱 ANNABELLE'S CAT RUNNER</div>
+      <div class="hud">
+        <div class="panel">
+          <div class="badge" id="scoreBadge">Score: 0</div>
+          <div class="badge" id="fishBadge">🐟 0</div>
+        </div>
+        <div class="panel">
+          <div class="badge" id="bestBadge">Best: 0</div>
+          <div class="badge" id="speedBadge">Speed: 36</div>
+        </div>
+      </div>
+      <div class="title">SPACE = jump · DOWN = duck · R = restart · ESC = pause</div>
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h1>🐱 Annabelle's Cat Runner</h1>
+          <p>Help the orange tabby outrun the neighborhood!</p>
+          <p>Grab fish 🐟, dodge dogs 🐶, rocks 🪨 and birds 🐦.</p>
+          <div class="keys">
+            <span class="key">SPACE</span>
+            <span class="key">↑</span>
+            <span class="key">W</span>
+            <span class="key">Jump</span>
+            <span class="key">↓</span>
+            <span class="key">S</span>
+            <span class="key">Duck</span>
+          </div>
+          <p>Click PLAY or press SPACE to start.</p>
+          <button class="btn" id="startBtn">▶ PLAY</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   🐱 Annabelle's Cat Runner — single-file HTML5 canvas game
+   - Kid-readable: lots of small named functions, plain variables
+   - One white-pixel texture stretched to draw everything (cheap + portable)
+   - Web Audio synth (no asset files needed)
+   - Mouse / touch / keyboard all supported
+   ========================================================================= */
+
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+/* ---------- Hi-DPI handling so it stays crisp ---------- */
+function fitCanvas() {
+  const rect = cvs.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  cvs.width  = Math.floor(rect.width  * dpr);
+  cvs.height = Math.floor(rect.height * dpr);
+  ctx.setTransform(dpr * (rect.width  / W),
+                   0,
+                   0,
+                   dpr * (rect.height / H),
+                   0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+const W = 900, H = 500;
+fitCanvas();
+window.addEventListener('resize', fitCanvas);
+
+/* ---------- Helpers ---------- */
+const rand = (a, b) => a + Math.random() * (b - a);
+const irand = (a, b) => Math.floor(rand(a, b));
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp  = (a, b, t) => a + (b - a) * t;
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+/* ---------- World state ---------- */
+const GROUND_Y = H - 60;
+const world = {
+  scrollSpeed: 360,
+  baseScrollSpeed: 360,
+  maxScrollSpeed: 760,
+  distance: 0,
+  fish: 0,
+  best: Number(localStorage.getItem('annabelle-cat-best') || 0),
+  shake: 0,
+  flash: 0,
+  paused: false,
+  over: false,
+  started: false,
+  spawnTimer: 1.0,
+  spawnInterval: 1.4,
+  jumpHeld: false,
+  duckHeld: false,
+};
+
+/* ---------- Entities ---------- */
+const cat = {
+  x: 140, y: GROUND_Y - 70, w: 70, h: 70,
+  vy: 0, onGround: true, duck: false,
+  anim: 0, blink: 0, blinking: false,
+};
+const obstacles = [];   // dogs, rocks, birds
+const pickups   = [];   // fish
+const clouds    = [];
+const hills     = [];
+const grass     = [];
+const particles = [];
+const pops      = [];   // floating "+1" texts
+
+/* seed background */
+for (let i = 0; i < 8; i++)
+  clouds.push({ x: rand(0, W), y: rand(30, 200), s: rand(60, 140) });
+for (let i = 0; i < 6; i++)
+  hills.push({ x: rand(0, W), w: rand(180, 340), h: rand(60, 140) });
+for (let i = 0; i < 40; i++)
+  grass.push({ x: rand(0, W), s: rand(6, 12) });
+
+/* ---------- Input ---------- */
+const keys = new Set();
+const mouseDown = { v: false };
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+  keys.add(k);
+  if (k === ' ' && !world.started) startGame();
+  if (k === ' ' && world.over)  restart();
+  if (k === 'r' && world.over)  restart();
+  if (k === 'escape') world.paused = !world.paused;
+  if (k === 'p')      world.paused = !world.paused;
+});
+addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
+cvs.addEventListener('mousedown', () => {
+  mouseDown.v = true;
+  if (!world.started) startGame();
+  else if (world.over) restart();
+  else if (cat.onGround) catJump();
+});
+cvs.addEventListener('mouseup',   () => mouseDown.v = false);
+cvs.addEventListener('touchstart', e => { e.preventDefault();
+  if (!world.started) startGame();
+  else if (world.over) restart();
+  else if (cat.onGround) catJump();
+}, { passive: false });
+cvs.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (!world.started) startGame();
+  else if (world.over) restart();
+});
+
+/* ---------- Web Audio synth (no asset files) ---------- */
+let actx = null;
+function audio() {
+  if (!actx) {
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { actx = null; }
+  }
+  return actx;
+}
+function beep(freq, dur, type = 'square', vol = 0.18, slide = 0) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  jump:  () => beep(520, 0.16, 'square', 0.18, -200),
+  coin:  () => { beep(880, 0.07, 'square', 0.14); setTimeout(() => beep(1320, 0.09, 'square', 0.14), 60); },
+  hit:   () => { beep(180, 0.25, 'sawtooth', 0.22, -120); setTimeout(() => beep(90, 0.3, 'sawtooth', 0.18, -40), 100); },
+  point: () => beep(660, 0.08, 'triangle', 0.14),
+};
+
+/* ---------- Game actions ---------- */
+function catJump() { if (cat.onGround) { cat.vy = -780; cat.onGround = false; sfx.jump(); } }
+function startGame() {
+  world.started = true; world.over = false;
+  document.getElementById('overlay').classList.add('hidden');
+  audio(); // unlock audio on user gesture
+}
+function restart() { reset(); world.started = true; world.over = false; document.getElementById('overlay').classList.add('hidden'); }
+function reset() {
+  world.scrollSpeed = world.baseScrollSpeed;
+  world.distance = 0; world.fish = 0;
+  world.spawnTimer = 1.0; world.spawnInterval = 1.4;
+  world.shake = 0; world.flash = 0;
+  obstacles.length = 0; pickups.length = 0;
+  particles.length = 0; pops.length = 0;
+  cat.x = 140; cat.y = GROUND_Y - 70; cat.vy = 0; cat.onGround = true; cat.duck = false;
+}
+
+function gameOver() {
+  if (world.over) return;
+  world.over = true;
+  world.shake = 0.4; world.flash = 0.3;
+  sfx.hit();
+  for (let i = 0; i < 50; i++) particles.push(makeParticle(cat.x + 35, cat.y + 35, 'red'));
+  const score = scoreVal();
+  if (score > world.best) { world.best = score; localStorage.setItem('annabelle-cat-best', score); }
+  setTimeout(() => {
+    const o = document.getElementById('overlay');
+    o.classList.remove('hidden');
+    o.querySelector('.card').innerHTML = `
+      <h1>💥 Game Over</h1>
+      <p>Score: <b>${score}</b> &nbsp; 🐟 ${world.fish}</p>
+      <p>Best: <b>${world.best}</b></p>
+      <p>Press SPACE, R, or click PLAY to try again.</p>
+      <button class="btn" id="startBtn">▶ PLAY AGAIN</button>
+    `;
+    document.getElementById('startBtn').addEventListener('click', restart);
+  }, 350);
+}
+
+function scoreVal() { return Math.floor(world.distance) + world.fish * 25; }
+
+/* ---------- Spawning ---------- */
+function spawnObstacle() {
+  const kinds = ['dog', 'rock', 'bird'];
+  const k = kinds[irand(0, kinds.length)];
+  if (k === 'dog')  obstacles.push({ kind:'dog',  x: W + 30, y: GROUND_Y - 48, w: 60, h: 48, duckable:false });
+  if (k === 'rock') obstacles.push({ kind:'rock', x: W + 30, y: GROUND_Y - 36, w: 44, h: 36, duckable:false });
+  if (k === 'bird') {
+    const y = GROUND_Y - 80 - rand(0, 90);
+    obstacles.push({ kind:'bird', x: W + 30, y, w: 50, h: 26, duckable:true, phase: rand(0, Math.PI*2) });
+  }
+}
+function spawnFish(high=false) {
+  const y = high ? GROUND_Y - 140 - rand(0, 40) : GROUND_Y - 80 - rand(0, 30);
+  pickups.push({ x: W + 20, y, w: 28, h: 22, y0: y, phase: rand(0, Math.PI*2) });
+}
+function spawnTick() {
+  world.spawnTimer -= 1/60;
+  if (world.spawnTimer <= 0) {
+    world.spawnTimer = world.spawnInterval * rand(0.8, 1.3);
+    const roll = Math.random();
+    if (roll < 0.4) spawnObstacle();
+    else if (roll < 0.75) spawnFish();
+    else { spawnObstacle(); spawnFish(true); }
+  }
+}
+
+/* ---------- Particles ---------- */
+function makeParticle(x, y, kind='gold') {
+  const angle = rand(0, Math.PI * 2);
+  const speed = rand(80, 300);
+  const palette = {
+    gold:  ['#ffd86b', '#ffae3d', '#fff3b0'],
+    red:   ['#ff5a5a', '#c92828', '#ffb0b0'],
+    white: ['#ffffff', '#fff7d4', '#fffbe8'],
+  }[kind] || ['#ffffff'];
+  return {
+    x, y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed - 80,
+    life: rand(0.5, 1.0), max: 1.0,
+    c: palette[irand(0, palette.length)],
+    s: rand(2, 5),
+  };
+}
+function popText(txt, x, y, c='#ffd86b') { pops.push({ txt, x, y, life: 1.0, c }); }
+
+/* ---------- Update ---------- */
+let lastT = performance.now();
+function update(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  if (!world.started || world.paused || world.over) { draw(); requestAnimationFrame(update); return; }
+
+  /* input */
+  cat.duck = keys.has('arrowdown') || keys.has('s');
+  if ((keys.has(' ') || keys.has('arrowup') || keys.has('w')) && cat.onGround) catJump();
+
+  /* physics */
+  cat.anim += dt * 14;
+  cat.blink -= dt;
+  if (cat.blink <= 0) { cat.blinking = true; cat.blink = 0.12; }
+  else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
+  if (!cat.onGround) { cat.vy += 1800 * dt; cat.y += cat.vy * dt; }
+  const h = cat.duck ? cat.h * 0.6 : cat.h;
+  if (cat.y + h >= GROUND_Y) { cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true; }
+
+  /* difficulty ramp */
+  const t = Math.min(1, world.distance / 4000);
+  world.scrollSpeed    = lerp(world.baseScrollSpeed, world.maxScrollSpeed, t);
+  world.spawnInterval = lerp(1.4, 0.7, t);
+
+  /* spawn */
+  spawnTick();
+
+  /* scroll bg */
+  for (const c of clouds) { c.x -= world.scrollSpeed * 0.15 * dt; if (c.x + c.s < -50) { c.x = W + 40; c.y = rand(30, 200); c.s = rand(60, 140); } }
+  for (const h of hills)  { h.x -= world.scrollSpeed * 0.35 * dt; if (h.x + h.w < -50) { h.x = W + rand(0, 300); h.w = rand(180, 340); h.h = rand(60, 140); } }
+  for (const g of grass)  { g.x -= world.scrollSpeed * 0.9  * dt; if (g.x < -10) g.x = W + rand(0, 100); }
+
+  /* move + collide obstacles */
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= world.scrollSpeed * dt;
+    if (o.kind === 'bird') { o.y += Math.sin((o.phase += dt * 8)) * 0.6; }
+    if (o.x + o.w < -20) { obstacles.splice(i, 1); continue; }
+    const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
+    const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+    if (rectsOverlap(cat.x, catY, catW, catH, o.x, o.y, o.w, o.h)) {
+      if (!(cat.duck && o.duckable)) gameOver();
+    }
+  }
+
+  /* move + collect pickups */
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const p = pickups[i];
+    p.x -= world.scrollSpeed * dt;
+    p.y = p.y0 + Math.sin((p.phase += dt * 4)) * 6;
+    if (p.x + p.w < -20) { pickups.splice(i, 1); continue; }
+    const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
+    const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+    if (rectsOverlap(cat.x, catY, catW, catH, p.x, p.y, p.w, p.h)) {
+      pickups.splice(i, 1);
+      world.fish++;
+      for (let k = 0; k < 18; k++) particles.push(makeParticle(p.x + 14, p.y + 11, 'gold'));
+      popText('+1', cat.x + 30, cat.y - 10, '#ffd86b');
+      sfx.coin();
+    }
+  }
+
+  /* particles */
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.vy += 400 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  /* popups */
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    p.life -= dt;
+    p.y -= 30 * dt;
+    if (p.life <= 0) pops.splice(i, 1);
+  }
+
+  /* scoring */
+  world.distance += world.scrollSpeed * dt * 0.05;
+  if (world.shake > 0) world.shake -= dt;
+  if (world.flash > 0) world.flash -= dt;
+
+  /* HUD */
+  document.getElementById('scoreBadge').textContent = 'Score: ' + scoreVal();
+  document.getElementById('fishBadge').textContent  = '🐟 ' + world.fish;
+  document.getElementById('bestBadge').textContent  = 'Best: ' + world.best;
+  document.getElementById('speedBadge').textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+
+  draw();
+  requestAnimationFrame(update);
+}
+
+/* ---------- Drawing (single-pixel style for crisp retro) ---------- */
+function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x|0, y|0, w|0, h|0); }
+
+function drawBackground() {
+  /* sky gradient */
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  g.addColorStop(0, '#6ebef0');
+  g.addColorStop(1, '#b4e6ff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
+
+  /* sun */
+  const sx = W - 110, sy = 70, sr = 36;
+  px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
+  px(sx - sr + 8, sy - sr + 8, (sr - 8) * 2, (sr - 8) * 2, '#fff5b4');
+
+  /* clouds */
+  for (const c of clouds) {
+    px(c.x, c.y, c.s, 22, '#ffffff');
+    px(c.x - 14, c.y + 8, 28, 18, '#ffffff');
+    px(c.x + c.s - 18, c.y + 6, 32, 20, '#ffffff');
+    px(c.x + 20, c.y - 8, 30, 18, '#ffffff');
+  }
+
+  /* hills */
+  for (const h of hills) {
+    const cx = h.x, cy = GROUND_Y, rx = h.w / 2, ry = h.h;
+    for (let dx = -rx; dx <= rx; dx += 4) {
+      const t = dx / rx;
+      if (t * t > 1) continue;
+      const yo = Math.sqrt(1 - t * t) * ry;
+      const c = lerpColor('#78c86e', '#5aa658', t);
+      px(cx + dx, cy - yo, 4, yo + 8, c);
+    }
+  }
+
+  /* ground */
+  px(0, GROUND_Y, W, H - GROUND_Y, '#6ec85a');
+  px(0, GROUND_Y, W, 6, '#50a046');
+
+  /* grass tufts */
+  for (const g of grass) px(g.x, g.y, 2, -g.s, '#3c8c3c');
+}
+
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const ar=(ah>>16)&255, ag=(ah>>8)&255, ab=ah&255;
+  const br=(bh>>16)&255, bg=(bh>>8)&255, bb=bh&255;
+  const r=Math.round(lerp(ar,br,t)), g=Math.round(lerp(ag,bg,t)), bl=Math.round(lerp(ab,bb,t));
+  return `rgb(${r},${g},${bl})`;
+}
+
+function drawCat() {
+  const ducking = cat.duck;
+  const h = ducking ? cat.h * 0.6 : cat.h;
+  const x = cat.x|0, y = (ducking ? cat.y + cat.h * 0.4 : cat.y)|0;
+
+  /* shadow */
+  px(x + 6, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 12, 5, 'rgba(0,0,0,.18)');
+
+  const body  = '#ffa55a';
+  const belly = '#ffdcb4';
+  const dark  = '#50321e';
+  const eye   = '#78dc3c';
+  const nose  = '#dc5a82';
+
+  if (!ducking) {
+    /* body */
+    px(x + 10, y + 22, cat.w - 20, cat.h - 32, body);
+    /* head */
+    px(x + 4, y, cat.w - 8, 32, body);
+    /* ears */
+    px(x + 6, y - 12, 14, 16, body);
+    px(x + cat.w - 20, y - 12, 14, 16, body);
+    px(x + 9, y - 6, 8, 8, '#ff82a0');
+    px(x + cat.w - 17, y - 6, 8, 8, '#ff82a0');
+    /* eyes — green like the sticker */
+    const eyeY = y + 8;
+    if (cat.blinking) {
+      px(x + 14, eyeY + 1, 8, 2, '#000');
+      px(x + cat.w - 22, eyeY + 1, 8, 2, '#000');
+    } else {
+      px(x + 14, eyeY, 8, 6, eye);
+      px(x + cat.w - 22, eyeY, 8, 6, eye);
+      px(x + 17, eyeY + 1, 3, 4, '#000');
+      px(x + cat.w - 19, eyeY + 1, 3, 4, '#000');
+      px(x + 19, eyeY + 1, 1, 1, '#fff');
+      px(x + cat.w - 17, eyeY + 1, 1, 1, '#fff');
+    }
+    /* nose */
+    px(x + cat.w/2 - 2, y + 18, 4, 3, nose);
+    px(x + cat.w/2, y + 21, 6, 1, dark);
+    px(x + cat.w/2 - 6, y + 21, 6, 1, dark);
+    /* whiskers */
+    px(x + 2, y + 19, 8, 1, dark);
+    px(x + 2, y + 22, 8, 1, dark);
+    px(x + cat.w - 10, y + 19, 8, 1, dark);
+    px(x + cat.w - 10, y + 22, 8, 1, dark);
+    /* belly */
+    px(x + 18, y + 32, cat.w - 36, cat.h - 38, belly);
+    /* legs (run anim) */
+    const legY = y + cat.h - 18;
+    const off  = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 0;
+    px(x + 16 + off, legY, 8, 18, body);
+    px(x + cat.w - 24 - off, legY, 8, 18, body);
+    /* tail */
+    const tw = Math.round(Math.sin(cat.anim) * 6);
+    px(x + cat.w - 6, y + 24 + tw, 12, 8, body);
+    px(x + cat.w - 2, y + 18 + tw, 8, 10, body);
+  } else {
+    /* ducking */
+    const dy = cat.y + cat.h * 0.66;
+    px(x + 8, dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
+    px(x + 4, dy - 4, cat.w - 8, 16, body);
+    px(x + 8, dy - 10, 8, 8, body);
+    px(x + cat.w - 16, dy - 10, 8, 8, body);
+    px(x + cat.w - 18, dy + 1, 6, 4, eye);
+    px(x + cat.w - 16, dy + 2, 2, 2, '#000');
+  }
+}
+
+function drawObstacles() {
+  for (const o of obstacles) {
+    if (o.kind === 'dog') {
+      const fur = '#966446', dark = '#50321e';
+      px(o.x + 4, o.y + 18, o.w - 8, o.h - 22, fur);
+      px(o.x + o.w - 24, o.y + 6, 22, 22, fur);
+      px(o.x + o.w - 22, o.y, 8, 10, fur);
+      px(o.x + o.w - 10, o.y, 8, 10, fur);
+      px(o.x + o.w - 6, o.y + 18, 6, 8, fur);
+      px(o.x + o.w - 2, o.y + 22, 3, 3, '#000');
+      px(o.x + o.w - 16, o.y + 12, 3, 3, '#000');
+      px(o.x + 8, o.y + o.h - 8, 6, 10, fur);
+      px(o.x + 18, o.y + o.h - 8, 6, 10, fur);
+      px(o.x + 28, o.y + o.h - 8, 6, 10, fur);
+      px(o.x + 38, o.y + o.h - 8, 6, 10, fur);
+      px(o.x, o.y + 14, 8, 5, fur);
+      px(o.x + o.w - 18, o.y + 9, 8, 2, dark);
+    }
+    else if (o.kind === 'rock') {
+      const cx = o.x + o.w / 2, cy = o.y + o.h - 4;
+      for (let dx = -o.w/2; dx <= o.w/2; dx += 3) {
+        const t = dx / (o.w/2);
+        const yo = Math.sqrt(Math.max(0, 1 - t * t)) * (o.h - 6);
+        px(cx + dx, cy - yo, 3, yo + 4, '#787880');
+      }
+      px(o.x + 8, o.y + o.h - 14, 12, 2, '#46464e');
+      px(o.x + 24, o.y + o.h - 18, 10, 2, '#46464e');
+    }
+    else if (o.kind === 'bird') {
+      const feather = '#3c50c8', beak = '#f0b428';
+      const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+      px(cx - 12, cy - 6, 24, 14, feather);
+      px(o.x + o.w - 16, cy - 8, 14, 14, feather);
+      px(o.x + o.w - 4, cy - 2, 6, 4, beak);
+      px(o.x + o.w - 12, cy - 4, 3, 3, '#fff');
+      px(o.x + o.w - 11, cy - 3, 2, 2, '#000');
+      const flap = Math.round(Math.sin(performance.now() / 80) * 4);
+      px(o.x + 6, cy - 4 + flap, 18, 5, '#283ca0');
+      px(o.x + 10, cy - 8 + flap, 10, 5, '#283ca0');
+      px(o.x - 4, cy - 2, 8, 4, feather);
+    }
+  }
+}
+
+function drawPickups() {
+  for (const p of pickups) {
+    px(p.x - 4, p.y - 4, p.w + 8, p.h + 8, 'rgba(255,240,120,.5)');
+    px(p.x + 2, p.y + 4, p.w - 12, p.h - 8, '#50b4e6');
+    px(p.x, p.y + 6, 6, p.h - 12, '#dc8c28');
+    px(p.x - 2, p.y + 4, 4, p.h - 8, '#dc8c28');
+    px(p.x + 8, p.y, 6, 5, '#dc8c28');
+    px(p.x + p.w - 8, p.y + 6, 3, 3, '#fff');
+    px(p.x + p.w - 7, p.y + 7, 2, 2, '#000');
+    px(p.x + p.w - 12, p.y + 8, 1, 6, '#286eb4');
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const a = clamp(p.life / p.max, 0, 1);
+    ctx.globalAlpha = a;
+    px(p.x, p.y, p.s, p.s, p.c);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPops() {
+  for (const p of pops) {
+    const a = clamp(p.life, 0, 1);
+    ctx.globalAlpha = a;
+    ctx.font = 'bold 22px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(p.txt, p.x, p.y);
+    ctx.fillStyle = p.c;
+    ctx.fillText(p.txt, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
+
+function draw() {
+  ctx.save();
+  if (world.shake > 0) {
+    const m = world.shake * 24;
+    ctx.translate((Math.random()*2-1) * m, (Math.random()*2-1) * m);
+  }
+  drawBackground();
+  drawPickups();
+  drawObstacles();
+  drawCat();
+  drawParticles();
+  drawPops();
+  if (world.flash > 0) {
+    const a = world.flash * 0.7;
+    ctx.fillStyle = `rgba(255,80,80,${a})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (world.paused && world.started && !world.over) {
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 56px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⏸  PAUSED', W/2, H/2);
+    ctx.font = '20px -apple-system, system-ui, sans-serif';
+    ctx.fillText('press ESC to resume', W/2, H/2 + 40);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+}
+
+/* boot */
+requestAnimationFrame(update);
+
+/* expose a tiny API for Playwright e2e */
+window.__catRunner = {
+  start: startGame,
+  restart,
+  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, best: world.best }),
+  jump: catJump,
+};
+</script>
+</body>
+</html>
