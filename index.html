@@ -399,6 +399,7 @@ const cat = {
   anim: 0, blink: 0, blinking: false,
   // Physics tuning (helps make the cat feel more "alive")
   coyoteTime: 0,              // seconds of grace after walking off a ledge during which the cat can still jump
+  jumpsLeft: 1,               // 1 = ground jump only (Mario-style). When 0 in endless, you can still do a "second jump" (air jump).
   jumpBuffer: 0,              // seconds remaining of a queued jump (pressed just before landing)
   wasOnGround: false,         // last-frame was on ground (used to detect coyote)
   wasOnGroundPlatform: null,  // pointer to the platform we were on last frame (for safe landing)
@@ -617,7 +618,7 @@ const sfx = {
 };
 
 /* ---------- Game actions ---------- */
-function catJump() { if (cat.onGround) { cat.vy = -880; cat.onGround = false; sfx.jump(); } }   // bigger jump (was -780) — easier to clear gaps
+function catJump() { if (cat.onGround) { cat.vy = -880; cat.onGround = false; sfx.jump(); cat.jumpsLeft = 0; } }   // bigger jump (was -780) — easier to clear gaps
 /* mid-air variable-jump: if you release jump while still rising, cut the velocity */
 function cutJump() { if (!cat.onGround && cat.vy < -250) cat.vy = -250; }   // cut higher now (was -200) for snappier control
 /* move cat left/right with air control. dir = -1 or +1. air = bool. */
@@ -691,7 +692,8 @@ const LEVELS = [
     goal: { x: 800, y: 100, w: 60, h: 22 },
     barrels: 0,
   },
-  // Level 2 — dogs patrol the girders
+  // Level 2 — dogs patrol the girders (spaced out so you can always
+  // see a safe landing zone between enemies)
   {
     platforms: [
       { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
@@ -722,12 +724,14 @@ const LEVELS = [
     ],
     goal: { x: 800, y: 100, w: 60, h: 22 },
     barrels: 1,
+    // Mario-style: only ONE dog per level so the kid can learn the
+    // stomp mechanic before getting overwhelmed
     dogs: [
-      { platform: 1, dir: 1 },  // walks on platform index 1
-      { platform: 6, dir: -1 }, // walks on platform index 6 (right side)
+      { platform: 1, dir: 1 },  // walks on platform index 1 (the leftmost lower girder)
     ],
   },
-  // Level 3 — barrels roll from the top
+  // Level 3 — barrels roll from the top + 1 dog (still only 1 hazard type
+  // at a time so the player can focus on one mechanic)
   {
     platforms: [
       { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
@@ -759,10 +763,9 @@ const LEVELS = [
     ],
     goal: { x: 800, y: 100, w: 60, h: 22 },
     barrels: 2,
-    dogs: [
-      { platform: 1, dir: 1 },
-      { platform: 4, dir: -1 },
-    ],
+    // No dogs on level 3 — just barrels (different mechanic, focus on
+    // dodging rolling barrels from the top). Mario does this too.
+    dogs: [],
   },
 ];
 
@@ -868,7 +871,7 @@ function updatePlatform(dt) {
   // is the climb key so it shouldn't kick the cat off the ladder)
   const spaceJump = keys.has(' ');
   if (world.onLadder && (leftHeld || rightHeld || (spaceJump && cat.vy <= 0))) {
-    if (spaceJump) cat.vy = -880;   // bigger jump (was -780) — easier to clear gaps
+    if (spaceJump) cat.vy = -880; cat.jumpsLeft = 0;   // bigger jump (was -780) — easier to clear gaps
     world.onLadder = null;
   }
 
@@ -925,7 +928,9 @@ function updatePlatform(dt) {
     if (jumpHeld) cat.jumpBuffer = 0.12;
     const canJump = cat.onGround || cat.coyoteTime > 0;
     if (cat.dropThroughTimer <= 0 && cat.jumpBuffer > 0 && canJump) {
-      cat.vy = -880; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;   // bigger jump (was -780) — easier to clear gaps
+      // platform mode = ground jump only. Endless mode has a separate
+      // double-jump path in updateEndless.
+      cat.vy = -880; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;
       sfx.jump();
     }
     // release jump cuts (variable jump height)
@@ -994,6 +999,8 @@ function updatePlatform(dt) {
       cat.coyoteTime = 0.10;
     }
     if (cat.coyoteTime > 0) cat.coyoteTime -= dt;
+    // reset jumpsLeft when the cat lands (for the Mario-style double jump)
+    if (cat.onGround) cat.jumpsLeft = 1;
     if (cat.jumpBuffer > 0) cat.jumpBuffer -= dt;
     cat.wasOnGround = cat.onGround;
     if (!cat.onGround) cat.wasOnGroundPlatform = null;   // forgot which one as soon as we leave
@@ -1027,6 +1034,16 @@ function updatePlatform(dt) {
         obstacles.splice(obstacles.indexOf(o), 1);
         world.stomps++; cat.vy = -520; cat.squash = 1; cat.invincible = 0.35;
         sfx.stomp();
+        // Mario-style stomp feedback: '+50' pops up, dust puffs
+        popText('+50', o.x + o.w/2, o.y - 10, '#ffe680');
+        for (let i = 0; i < 6; i++) {
+          particles.push({
+            ...makeParticle(o.x + o.w/2, o.y + o.h/2, 'gold'),
+            vx: rand(-150, 150), vy: rand(-180, -60),
+            life: rand(0.3, 0.5), max: 0.5,
+            s: rand(2, 3),
+          });
+        }
       } else {
         // hurt: lose a life
         loseLife();
@@ -1169,7 +1186,17 @@ function gameOver() {
 function scoreVal() { return Math.floor(world.distance) + world.fish * 25 + world.stomps * 50; }
 
 /* ---------- Spawning ---------- */
+// minimum horizontal gap between any two obstacles (in px).
+// Guarantees a clear path so the player always has a safe stretch
+// between enemies, like Mario's goomba spacing.
+const MIN_OBSTACLE_GAP = 220;
+
 function spawnObstacle() {
+  // check if any obstacle is already too close to the spawn point — if
+  // so, skip this spawn so the player always has a clear gap
+  for (const o of obstacles) {
+    if (o.x > W - MIN_OBSTACLE_GAP) return;   // too close, try again later
+  }
   const kinds = ['dog', 'rock', 'bird'];
   const k = kinds[irand(0, kinds.length)];
   if (k === 'dog')  obstacles.push({ kind:'dog',  x: W + 30, y: GROUND_Y - 48, w: 60, h: 48, duckable:false });
@@ -1188,9 +1215,11 @@ function spawnTick() {
   if (world.spawnTimer <= 0) {
     world.spawnTimer = world.spawnInterval * rand(0.8, 1.3);
     const roll = Math.random();
-    if (roll < 0.4) spawnObstacle();
-    else if (roll < 0.75) spawnFish();
-    else { spawnObstacle(); spawnFish(true); }
+    // Mario-style: never spawn 2 obstacles back-to-back. Either an
+    // obstacle OR a fish, but not both. And fish are MORE common than
+    // obstacles in easy mode so the player feels rewarded.
+    if (roll < 0.65) spawnFish();              // fish 65% of the time (was 35%)
+    else spawnObstacle();                        // obstacle 35% of the time (was 40%)
   }
 }
 
@@ -1219,7 +1248,27 @@ let lastT = performance.now();
 function updateEndless(dt) {
   /* input */
   cat.duck = keys.has('arrowdown') || keys.has('s');
-  if ((keys.has(' ') || keys.has('arrowup') || keys.has('w')) && cat.onGround) catJump();
+  // Mario-style double jump in endless mode:
+  //   - ground jump (cat.onGround) → full -880 jump
+  //   - mid-air jump (cat.jumpsLeft > 0) → weaker -720 jump with white puff
+  const jumpKeyHeld = keys.has(' ') || keys.has('arrowup') || keys.has('w');
+  if (jumpKeyHeld && cat.onGround) {
+    catJump();
+  } else if (jumpKeyHeld && !cat.onGround && cat.jumpsLeft > 0) {
+    // double jump
+    cat.vy = -720;
+    cat.jumpsLeft--;
+    sfx.jump();
+    // white puff particles around the cat
+    for (let i = 0; i < 8; i++) {
+      particles.push({
+        ...makeParticle(cat.x + cat.w/2, cat.y + cat.h/2, 'white'),
+        vx: rand(-120, 120), vy: rand(-80, 40),
+        life: rand(0.3, 0.5), max: 0.5,
+        s: rand(2, 4),
+      });
+    }
+  }
   // release-jump: cut the jump short if you let go while still going up
   if (cat.invincible <= 0) {  // stomp bounce shouldn't be cut short
     const stillHolding = keys.has(' ') || keys.has('arrowup') || keys.has('w');
@@ -1230,6 +1279,8 @@ function updateEndless(dt) {
   const rightHeld = keys.has('arrowright') || keys.has('d');
   const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
   if (moveDir !== 0) catMove(moveDir, !cat.onGround);
+  // reset double-jump charges when the cat lands (Mario-style)
+  if (cat.onGround) cat.jumpsLeft = 1;
 
   /* physics */
   cat.anim += dt * 14;
