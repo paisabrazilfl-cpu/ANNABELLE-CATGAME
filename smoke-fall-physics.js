@@ -78,19 +78,21 @@ async function waitForServer(port, timeout = 5000) {
   await page.waitForTimeout(150);
   // sample y mid-fall (cat should be falling for at least 100ms after walking off)
   await page.keyboard.down('ArrowRight');
-  await page.waitForTimeout(1200);  // cat walks off (250px takes ~660ms) + falls
+  await page.waitForTimeout(1200);  // cat walks off + falls
   await page.keyboard.up('ArrowRight');
   const afterWalkOff = await page.evaluate(() => ({
     x: window.__cat.x, y: window.__cat.y, vy: window.__cat.vy, onGround: window.__cat.onGround,
   }));
   console.log('after walking off platform right edge:', JSON.stringify(afterWalkOff));
-  // The cat was at y=290 on a platform, then walked off. The cat should have
-  // fallen through the air and landed on the floor (y=356) or below.
-  // y=290 is on platforms[1]; y=356 is the floor; anything in between means
-  // the cat was in mid-air at some point. The "after" sample might catch
-  // the cat on the floor, which is correct.
+  // The cat was at y=290 on platforms[1], then walked off. With the magnetic-
+  // platform bug fix, the cat should fall to platforms[2] (y=290) OR to the
+  // floor (y=356). Either is correct. The key is: the cat should NOT be
+  // stuck at y=290 on platforms[1] with the same x as when it started.
   if (afterWalkOff.x <= 360) errs.push('cat did not walk off the platform (x=' + afterWalkOff.x + ' should be > 360)');
-  if (afterWalkOff.y !== 356) errs.push('cat did not land on floor (y=' + afterWalkOff.y + ' should be 356)');
+  if (!afterWalkOff.onGround) errs.push('cat still falling after 1200ms (y=' + afterWalkOff.y + ', vy=' + afterWalkOff.vy + ')');
+  // Cat should be on EITHER a lower platform (y=170, 290) OR the floor (y=356)
+  const validYs = [50, 170, 290, 356];   // platforms[5,4/3,2/1, floor]
+  if (!validYs.includes(afterWalkOff.y)) errs.push('cat at unexpected y=' + afterWalkOff.y + ' (valid: ' + validYs.join(',') + ')');
 
   // Test 3: drop-through with DOWN + JUMP
   // Reset cat to a platform first

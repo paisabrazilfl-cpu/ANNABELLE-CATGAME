@@ -1827,9 +1827,9 @@ function drawPlatforms() {
     const p = platforms[i];
     const isFloor = (i === 0);
     if (!isFloor) {
-      // soft drop shadow under floating platforms
-      px(p.x + 4, p.y + 18, p.w - 8, 6, 'rgba(0,0,0,.22)');
-      px(p.x + 10, p.y + 24, p.w - 20, 4, 'rgba(0,0,0,.12)');
+      // soft drop shadow under floating platforms — small and subtle so it
+      // doesn't look like a long black bar
+      px(p.x + 6, p.y + 14, p.w - 12, 3, 'rgba(0,0,0,.18)');
     }
     // ─── Rock face body (4 horizontal bands for chiseled depth) ───
     px(p.x, p.y,     p.w, 1, '#a07040');   // bright top edge
@@ -1868,11 +1868,6 @@ function drawPlatforms() {
       // a tiny fern on some platforms
       if ((i % 2) === 1 && p.w > 80) {
         drawFern(p.x + p.w - 18, p.y - 2, 12);
-      }
-      // a banana on some platforms
-      if ((i % 3) === 0 && p.w > 100) {
-        drawBanana(p.x + 14, p.y - 8);
-        drawBanana(p.x + 22, p.y - 6);
       }
     }
     if (isFloor) {
@@ -2119,6 +2114,16 @@ function drawFern(x, y, h) {
 function drawPlatformBackground() {
   const t = performance.now() / 1000;
 
+  // ─── Full background fill (so no transparent gaps show the body CSS) ───
+  // Top half: sky gradient (purple→orange dusk), bottom half: misty teal haze
+  const skyG = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  skyG.addColorStop(0,    '#2a1a4a');
+  skyG.addColorStop(0.25, '#5a3a6a');
+  skyG.addColorStop(0.5,  '#a06a7a');
+  skyG.addColorStop(0.8,  '#d8a890');
+  skyG.addColorStop(1,    '#e8c0a0');
+  ctx.fillStyle = skyG; ctx.fillRect(0, 0, W, GROUND_Y);
+
   // ─── Sky gradient (only a sliver visible at the top) ───
   const g = ctx.createLinearGradient(0, 0, 0, 200);
   g.addColorStop(0,    '#2a1a4a');
@@ -2140,18 +2145,19 @@ function drawPlatformBackground() {
     drawBanana(bx + 6, 34 + i * 5);
   }
 
-  // ─── Far jungle canopy (layer 1 — slowest parallax, dark green) ───
+  // ─── Far jungle canopy (layer 1 — slowest parallax, dark green) — kept
+  //     HIGH in the sky so it never overlaps the platforms
   for (let i = 0; i < 16; i++) {
     const cx = (i * 65) - (t * 5) % 80;
-    const cy = 90 + Math.sin(i * 0.7) * 8;
-    drawLeafCluster(cx, cy, 1.6, 2);   // dark green
+    const cy = 40 + Math.sin(i * 0.7) * 5;
+    drawLeafCluster(cx, cy, 1.4, 2);   // dark green
   }
 
-  // ─── Mid canopy (layer 2 — medium parallax, mid green) ───
+  // ─── Mid canopy (layer 2 — medium parallax, mid green) — kept HIGH too ───
   for (let i = 0; i < 14; i++) {
     const cx = (i * 75) - (t * 9) % 100;
-    const cy = 130 + Math.sin(i * 0.9) * 6;
-    drawLeafCluster(cx, cy, 1.8, 1);   // jungle-green
+    const cy = 80 + Math.sin(i * 0.9) * 4;
+    drawLeafCluster(cx, cy, 1.4, 1);   // jungle-green
   }
 
   // ─── Hanging vines (from canopy down toward middle of screen) ───
@@ -2170,30 +2176,25 @@ function drawPlatformBackground() {
     }
   }
 
-  // ─── Front canopy (layer 3 — fastest, lime highlight) ───
-  for (let i = 0; i < 12; i++) {
-    const cx = (i * 85) - (t * 16) % 120;
-    const cy = 170 + Math.sin(i * 1.1 + t) * 4;
-    drawLeafCluster(cx, cy, 2.2, 0);   // lime green (front, bright)
-    drawLeafCluster(cx + 20, cy + 4, 1.4, 3);  // lime-light mix
+  // ─── Front canopy (layer 3 — fastest, lime highlight) — kept HIGH to
+  //     stay above the top platform (y=120) so it never overlaps the platforms
+  for (let i = 0; i < 10; i++) {
+    const cx = (i * 95) - (t * 16) % 120;
+    const cy = 60 + Math.sin(i * 1.1 + t) * 3;
+    drawLeafCluster(cx, cy, 1.6, 0);   // lime green (front, bright, smaller)
+    drawLeafCluster(cx + 24, cy + 4, 1.0, 3);  // lime-light mix
   }
 
-  // ─── Background dirt wall behind the platforms (texture) ───
+  // ─── Background dirt wall behind the platforms — slim band so it doesn't
+  //     add visual noise; just enough to anchor the platforms in the world ───
   ctx.fillStyle = '#3a2418';
-  ctx.fillRect(0, GROUND_Y - 100, W, 100);
-  // dirt speckles for texture
-  for (let i = 0; i < 60; i++) {
-    const dx = (i * 47) % W;
-    const dy = GROUND_Y - 90 + (i * 19) % 80;
-    px(dx, dy, 2, 2, i % 3 === 0 ? '#5a3a20' : '#2a1a08');
-  }
+  ctx.fillRect(0, GROUND_Y - 40, W, 40);
   // a few small rocks embedded
-  for (let i = 0; i < 8; i++) {
-    const rx = (i * 113 + 30) % W;
-    const ry = GROUND_Y - 30 - (i * 7) % 40;
-    px(rx, ry, 6, 5, '#5a4030');
-    px(rx, ry, 6, 1, '#6a5040');  // top highlight
-    px(rx, ry + 4, 6, 1, '#1a0a04');  // bottom shadow
+  for (let i = 0; i < 6; i++) {
+    const rx = (i * 137 + 30) % W;
+    const ry = GROUND_Y - 18 - (i * 5) % 14;
+    px(rx, ry, 4, 3, '#5a4030');
+    px(rx, ry, 4, 1, '#6a5040');
   }
 
   // ─── Floor (the actual ground) — dirt with grass top ───
