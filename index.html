@@ -398,6 +398,7 @@ const cat = {
   coyoteTime: 0,              // seconds of grace after walking off a ledge during which the cat can still jump
   jumpBuffer: 0,              // seconds remaining of a queued jump (pressed just before landing)
   wasOnGround: false,         // last-frame was on ground (used to detect coyote)
+  wasOnGroundPlatform: null,  // pointer to the platform we were on last frame (for safe landing)
   terminalVel: 1100,          // max downward speed
   dropThroughTimer: 0,        // when > 0, ignore platform collisions (drop-down)
 };
@@ -642,6 +643,7 @@ function reset() {
   cat.vx = 0; cat.vy = 0;
   cat.onGround = true; cat.duck = false;
   cat.facing = 1; cat.squash = 0; cat.invincible = 0;
+  cat.wasOnGroundPlatform = 'floor';   // we start on the floor
   // mode-specific reset
   if (world.mode === 'platform') {
     loadLevel(world.level);
@@ -926,10 +928,13 @@ function updatePlatform(dt) {
       if (!jumpHeld && cat.vy < -200) cat.vy = -200;
     }
 
-    // gravity (with terminal velocity cap)
+    // gravity (with terminal velocity cap) — tuned for a snappy, "game-y" fall
+    // that still feels weighted. Base 2200 px/s² + extra pull when falling fast.
     const _prevY = cat.y;
     if (!cat.onGround) {
-      cat.vy += 1800 * dt;
+      let g = 2200;
+      if (cat.vy > 400) g += 600;          // heavy gravity when already falling
+      cat.vy += g * dt;
       if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;
       cat.y += cat.vy * dt;
     }
@@ -944,9 +949,37 @@ function updatePlatform(dt) {
         // Is the cat now overlapping the top of the platform?
         const nowOver  = cat.y + catH >= p.y && cat.y + catH <= p.y + 16;
         const onHoriz  = cat.x + catW > p.x && cat.x < p.x + p.w;
-        if (wasAboveOrOn && nowOver && onHoriz) {
+        const wasOnThisPlatform = cat.wasOnGroundPlatform === p;
+        // CRITICAL: only land if EITHER (a) we were on this same platform last
+        // frame (walking along it) OR (b) we're clearly falling onto it (vy>50).
+        // Without this gate, a cat walking off the edge of one platform would
+        // snap back onto a different platform that happens to be at the same
+        // y as the one we left (the "magnetic platform" bug).
+        const stayingOnPlatform = wasOnThisPlatform && cat.vy >= -10;
+        const fallingOntoPlatform = !wasOnThisPlatform && cat.vy > 50;
+        if (wasAboveOrOn && nowOver && onHoriz && (stayingOnPlatform || fallingOntoPlatform)) {
+          // landing: if the cat was falling fast, spawn a dust puff
+          const landingSpeed = Math.abs(cat.vy);
           cat.y = p.y - catH; cat.vy = 0; cat.onGround = true;
+          cat.wasOnGroundPlatform = p;
           if (cat.squash > 0.6) sfx.land();
+          if (landingSpeed > 350) {
+            // dust puffs on both sides
+            for (let k = 0; k < 8; k++) {
+              const side = k < 4 ? -1 : 1;
+              particles.push({
+                ...makeParticle(p.x + catW/2 + side * (catW/2 + Math.random() * 8),
+                                p.y - 2, 'gold'),
+                vx: side * rand(60, 140),
+                vy: -rand(40, 120),
+                life: rand(0.3, 0.5),
+                max: 0.5,
+                c: 'rgba(220,220,220,.6)',
+                s: rand(2, 3),
+              });
+            }
+            world.shake = Math.min(0.15, landingSpeed / 4000);  // tiny screen-shake on hard landings
+          }
           break;
         }
       }
@@ -958,6 +991,7 @@ function updatePlatform(dt) {
     if (cat.coyoteTime > 0) cat.coyoteTime -= dt;
     if (cat.jumpBuffer > 0) cat.jumpBuffer -= dt;
     cat.wasOnGround = cat.onGround;
+    if (!cat.onGround) cat.wasOnGroundPlatform = null;   // forgot which one as soon as we leave
 
     // fall off the bottom of the world → death
     if (cat.y > H + 100) { gameOver(); return; }
@@ -1175,7 +1209,9 @@ function updateEndless(dt) {
   else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
 
   // gravity (lighter while invincible for that floaty-bounce feel)
-  const grav = (cat.invincible > 0) ? 900 : 1800;
+  // heavier when already falling fast for that "weight" feel
+  let grav = (cat.invincible > 0) ? 1100 : 2200;
+  if (cat.vy > 400) grav += 600;
   // remember the previous-frame bottom of the cat for stomp detection
   // (must be sampled BEFORE we move it, otherwise the side-bump path always wins)
   const _prevY = cat.y;
@@ -1286,6 +1322,7 @@ function updateEndless(dt) {
   if (cat.y + h >= GROUND_Y) {
     const wasInAir = !cat.onGround;
     cat.y = GROUND_Y - h; cat.vy = 0; cat.onGround = true;
+    cat.wasOnGroundPlatform = 'floor';
     if (wasInAir && cat.squash > 0.6) { sfx.land(); }
   }
 
@@ -1366,33 +1403,91 @@ function update(now) {
 /* ---------- Drawing (single-pixel style for crisp retro) ---------- */
 function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x|0, y|0, w|0, h|0); }
 
+/* Falling air-streaks: small vertical white wisps that rush past the cat when
+   it's falling fast. Creates a "whoosh" effect. */
+const _airStreaks = [];
+function drawAirStreaks() {
+  // spawn new streaks when falling
+  if (!cat.onGround && cat.vy > 300) {
+    if (Math.random() < 0.4) {
+      _airStreaks.push({
+        x: cat.x + Math.random() * cat.w,
+        y: cat.y - 5 + Math.random() * cat.h,
+        len: 4 + Math.random() * 12,
+        life: 0.5,
+        max: 0.5,
+      });
+    }
+  }
+  // update + draw
+  for (let i = _airStreaks.length - 1; i >= 0; i--) {
+    const s = _airStreaks[i];
+    s.life -= 0.05;
+    s.y += cat.vy * 0.04;  // streaks move with the cat's fall speed
+    if (s.life <= 0) { _airStreaks.splice(i, 1); continue; }
+    const a = s.life / s.max;
+    px(s.x, s.y, 1, s.len | 0, `rgba(255,255,255,${0.4 * a})`);
+    px(s.x + 1, s.y + (s.len * 0.3) | 0, 1, (s.len * 0.5) | 0, `rgba(255,255,255,${0.2 * a})`);
+  }
+}
+
 function drawBackground() {
   const t = performance.now() / 1000;
-  /* sky gradient (richer: top sky to mid blue to horizon haze) */
+  /* sky gradient (5 stops for atmospheric depth: deep blue → sky → warm horizon) */
   const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0,    '#5aaee8');
-  g.addColorStop(0.6,  '#a8d8f8');
-  g.addColorStop(1,    '#cce8f8');
+  g.addColorStop(0,    '#4a9edc');
+  g.addColorStop(0.3,  '#7ec0e8');
+  g.addColorStop(0.65, '#b8dcf0');
+  g.addColorStop(1,    '#d8eef8');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
-  // a few far clouds (parallax-slow, behind everything)
-  ctx.fillStyle = 'rgba(255,255,255,.5)';
-  for (let i = 0; i < 3; i++) {
-    const cx = (i * 320 - t * 4) % (W + 200) - 100;
-    const cy = 40 + i * 30;
+  // warm horizon glow
+  const horizon = ctx.createLinearGradient(0, GROUND_Y - 100, 0, GROUND_Y);
+  horizon.addColorStop(0, 'rgba(255,200,150,0)');
+  horizon.addColorStop(1, 'rgba(255,200,150,.15)');
+  ctx.fillStyle = horizon; ctx.fillRect(0, GROUND_Y - 100, W, 100);
+
+  // sun rays (god rays from the sun position)
+  const sx = W - 110, sy = 70, sr = 36;
+  for (let i = 0; i < 5; i++) {
+    const angle = (t * 0.3 + i * 0.7) % (Math.PI * 2);
+    const len = 200 + i * 30;
+    const alpha = 0.04 + i * 0.01;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgba(255,240,180,${alpha})`;
     ctx.beginPath();
-    ctx.ellipse(cx,      cy,  40, 10, 0, 0, Math.PI*2);
-    ctx.ellipse(cx + 25, cy - 4, 30, 12, 0, 0, Math.PI*2);
-    ctx.ellipse(cx - 25, cy - 2, 25, 9,  0, 0, Math.PI*2);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(len, -8 - i * 2);
+    ctx.lineTo(len, 8 + i * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // a few far clouds (parallax-slow, behind everything)
+  ctx.fillStyle = 'rgba(255,255,255,.4)';
+  for (let i = 0; i < 5; i++) {
+    const cx = (i * 280 - t * 3) % (W + 200) - 100;
+    const cy = 50 + i * 25;
+    ctx.beginPath();
+    ctx.ellipse(cx,      cy,      40, 9,  0, 0, Math.PI*2);
+    ctx.ellipse(cx + 25, cy - 3,  30, 11, 0, 0, Math.PI*2);
+    ctx.ellipse(cx - 25, cy - 1,  25, 8,  0, 0, Math.PI*2);
     ctx.fill();
   }
 
-  /* sun (with glow halo) */
-  const sx = W - 110, sy = 70, sr = 36;
+  /* sun (with multi-layer glow halo) */
+  px(sx - sr - 24, sy - sr - 24, (sr + 24) * 2, (sr + 24) * 2, 'rgba(255,230,130,.10)');
   px(sx - sr - 16, sy - sr - 16, (sr + 16) * 2, (sr + 16) * 2, 'rgba(255,230,130,.18)');
   px(sx - sr - 6,  sy - sr - 6,  (sr + 6) * 2,  (sr + 6) * 2,  'rgba(255,240,160,.25)');
   px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
   px(sx - sr + 4, sy - sr + 4, (sr - 4) * 2, (sr - 4) * 2, '#fff0a8');
   px(sx - sr + 10, sy - sr + 10, (sr - 10) * 2, (sr - 10) * 2, '#fff5b4');
+  // sun face: tiny smile (kid-friendly)
+  px(sx - 4, sy + 6, 2, 2, '#7a4a10');
+  px(sx + 2, sy + 6, 2, 2, '#7a4a10');
+  px(sx - 2, sy + 10, 4, 1, '#7a4a10');
 
   /* clouds (foreground parallax) */
   for (const c of clouds) {
@@ -1403,7 +1498,19 @@ function drawBackground() {
     px(c.x + c.s - 18, c.y + 6, 32, 20, '#e8f0f8');
     px(c.x + 20, c.y - 8,  30, 18, '#e8f0f8');
     px(c.x, c.y, c.s, 22, '#ffffff');
-    px(c.x + 4, c.y, c.s - 8, 6, '#ffffff');   // top highlight
+    px(c.x + 4, c.y, c.s - 8, 6, '#ffffff');
+  }
+
+  /* birds (silhouettes, slow parallax) — small V shapes */
+  for (let i = 0; i < 3; i++) {
+    const bx = ((i * 280) - t * 8) % (W + 200) - 100;
+    const by = 100 + i * 30 + Math.sin(t + i) * 6;
+    const wing = Math.sin(t * 4 + i) * 3;
+    px(bx,        by + wing, 1, 1, '#3a3a3a');
+    px(bx + 2,    by,         1, 1, '#3a3a3a');
+    px(bx + 4,    by + wing, 1, 1, '#3a3a3a');
+    px(bx + 6,    by,         1, 1, '#3a3a3a');
+    px(bx + 8,    by + wing, 1, 1, '#3a3a3a');
   }
 
   /* distant hills (back, soft) */
@@ -1436,7 +1543,7 @@ function drawBackground() {
     px(g.x + 2, g.y - 1, 1, -(g.s - 2), '#5ba84a');
   }
   // occasional flowers
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     const fx = (i * 137) % W;
     const fy = GROUND_Y - 2;
     const fbloom = (t * 2 + i) % 2 < 1;
@@ -1444,6 +1551,15 @@ function drawBackground() {
       px(fx, fy - 4, 3, 3, '#fff5b4');
       px(fx + 1, fy - 3, 1, 1, '#ff8aa8');
     }
+  }
+  // little butterflies / floating petals (kid-friendly, slow float)
+  for (let i = 0; i < 4; i++) {
+    const fx = ((i * 230) + Math.sin(t * 0.5 + i) * 20) % W;
+    const fy = GROUND_Y - 60 - Math.sin(t * 0.7 + i) * 10 + i * 12;
+    const fw = Math.sin(t * 6 + i) > 0 ? 1 : 0;  // wings flap
+    px(fx, fy, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
+    px(fx - 2, fy + fw, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
+    px(fx + 2, fy + fw, 1, 1, i % 2 ? '#ff8aa8' : '#ffe680');
   }
 }
 
@@ -1467,6 +1583,14 @@ function drawCat() {
     xStretch = 1 + 0.20 * cat.squash;     // bulge width
     yOffset  = (h - h * yStretch) | 0;    // grow downward to keep feet on the ground
     h = (h * yStretch) | 0;
+
+  // Falling stretch: when falling fast, the cat stretches vertically (gravity pulls)
+  if (!cat.onGround && cat.vy > 250 && !ducking) {
+    yStretch += clamp((cat.vy - 250) / 1500, 0, 0.18);  // up to 18% taller
+    xStretch -= clamp((cat.vy - 250) / 3000, 0, 0.06);  // slightly thinner
+    yOffset = (cat.h - cat.h * yStretch) | 0;
+    h = (cat.h * yStretch) | 0;
+  }
   }
   // breathing idle: tiny scale pulse when standing still
   if (cat.onGround && !ducking && Math.abs(cat.vx) < 20) {
@@ -1697,60 +1821,86 @@ function drawPickups() {
 
 /* ---------- Platform-mode drawing (DK-style) ---------- */
 function drawPlatforms() {
-  // girders — dark wood with metal rivets
+  // SNES-jungle platforms: carved earth/rock with chiseled edges, dirt on top,
+  // ferns growing on the surface, dimensional rock face.
   for (let i = 0; i < platforms.length; i++) {
     const p = platforms[i];
     const isFloor = (i === 0);
-    // ─── Soft drop shadow under the platform ───
     if (!isFloor) {
-      px(p.x + 2, p.y + 14, p.w - 4, 4, 'rgba(0,0,0,.18)');
-      px(p.x + 6, p.y + 18, p.w - 12, 3, 'rgba(0,0,0,.10)');
+      // soft drop shadow under floating platforms
+      px(p.x + 4, p.y + 18, p.w - 8, 6, 'rgba(0,0,0,.22)');
+      px(p.x + 10, p.y + 24, p.w - 20, 4, 'rgba(0,0,0,.12)');
     }
-    // ─── Wood grain body (4 layers for richness) ───
-    px(p.x, p.y,     p.w, 2, '#c87038');  // bright top
-    px(p.x, p.y + 2, p.w, 4, '#a05a2a');  // top mid
-    px(p.x, p.y + 6, p.w, 5, '#7a3f1c');  // main
-    px(p.x, p.y + 11, p.w, 3, '#5b2a10'); // dark bottom
-    // wood grain lines (subtle vertical streaks)
-    for (let gx = p.x + 8; gx < p.x + p.w - 8; gx += 14) {
-      px(gx, p.y + 2, 1, 9, 'rgba(90,50,20,.4)');
+    // ─── Rock face body (4 horizontal bands for chiseled depth) ───
+    px(p.x, p.y,     p.w, 1, '#a07040');   // bright top edge
+    px(p.x, p.y + 1, p.w, 3, '#7a4f28');   // upper face
+    px(p.x, p.y + 4, p.w, 5, '#5a3818');   // main
+    px(p.x, p.y + 9, p.w, 4, '#3a2208');   // dark
+    px(p.x, p.y + 13, p.w, 1, '#1a0c04');  // bottom shadow
+    // vertical chiseled highlights (3-4 streaks per platform)
+    for (let cx = p.x + 6; cx < p.x + p.w - 6; cx += 18) {
+      px(cx, p.y + 1, 1, 5, 'rgba(180,120,60,.5)');   // mid highlight
     }
-    // rivets (with highlight)
-    for (let rx = p.x + 12; rx < p.x + p.w; rx += 32) {
-      px(rx,     p.y + 5, 3, 3, '#2a1408');                 // dark base
-      px(rx,     p.y + 5, 3, 1, '#3a1a08');                 // top dark
-      px(rx + 1, p.y + 6, 1, 1, '#c08050');                 // highlight
+    // little rock chunks embedded in the face
+    for (let cx = p.x + 10; cx < p.x + p.w - 10; cx += 30) {
+      const rx = cx + ((cx * 7) % 8);
+      px(rx, p.y + 5, 4, 3, '#3a2208');
+      px(rx, p.y + 5, 4, 1, '#6a4820');
     }
-    // end caps (darker, with highlight)
-    px(p.x,         p.y,     6, 14, '#2a1408');
-    px(p.x + 1,     p.y,     4, 2,  '#5b2a10');
-    px(p.x + p.w - 6, p.y,   6, 14, '#2a1408');
-    px(p.x + p.w - 5, p.y,   4, 2,  '#5b2a10');
+    // end caps (carved-edge look)
+    px(p.x,         p.y + 1, 3, 13, '#2a1408');
+    px(p.x + 1,     p.y + 1, 1, 4,  '#6a4820');
+    px(p.x + p.w - 3, p.y + 1, 3, 13, '#2a1408');
+    px(p.x + p.w - 2, p.y + 1, 1, 4,  '#6a4820');
+    if (!isFloor) {
+      // ─── Dirt strip on top of the floating platform (4 layers) ───
+      px(p.x, p.y - 6, p.w, 2, '#7a4f28');   // dirt dark
+      px(p.x, p.y - 4, p.w, 4, '#5a3818');   // dirt main
+      // grass top
+      px(p.x, p.y - 2, p.w, 2, '#3a8a30');
+      px(p.x, p.y - 1, p.w, 1, '#5ac84a');   // bright top
+      // little grass blades on top
+      for (let gx = p.x + 4; gx < p.x + p.w - 4; gx += 12) {
+        const bladeH = 3 + ((gx * 7) % 4);
+        px(gx, p.y - 2 - bladeH, 1, bladeH, '#3a8a30');
+        px(gx + 1, p.y - 2 - bladeH + 1, 1, bladeH - 1, '#5ac84a');
+      }
+      // a tiny fern on some platforms
+      if ((i % 2) === 1 && p.w > 80) {
+        drawFern(p.x + p.w - 18, p.y - 2, 12);
+      }
+      // a banana on some platforms
+      if ((i % 3) === 0 && p.w > 100) {
+        drawBanana(p.x + 14, p.y - 8);
+        drawBanana(p.x + 22, p.y - 6);
+      }
+    }
     if (isFloor) {
-      // top of the floor is the "ground" — green grass strip on top of the wood
-      px(0, p.y, W, 3, '#7ad868');
-      px(0, p.y + 3, W, 1, '#5ba84a');
+      // top of the floor — thicker grass strip
+      px(0, p.y, W, 4, '#3a8a30');
+      px(0, p.y + 4, W, 2, '#5ac84a');
+      px(0, p.y - 2, W, 2, '#2a6a20');
       // grass blades poking up
-      for (let gx = 0; gx < W; gx += 18) {
-        const bladeH = 4 + ((gx * 7) % 4);
-        px(gx, p.y - bladeH, 1, bladeH, '#5ba84a');
-        px(gx + 1, p.y - bladeH + 1, 1, bladeH - 1, '#7ad868');
+      for (let gx = 0; gx < W; gx += 14) {
+        const bladeH = 4 + ((gx * 7) % 5);
+        px(gx, p.y - bladeH, 1, bladeH, '#3a8a30');
+        px(gx + 1, p.y - bladeH + 1, 1, bladeH - 1, '#5ac84a');
       }
     }
   }
-  // ─── Ladders (with side highlights) ───
+  // ─── Ladders (vines + wooden rungs) ───
   for (const l of ladders) {
     const rungs = Math.floor((l.top - l.bottom) / 16);
-    // rails (slightly rounded via 3-stop gradient)
-    px(l.x,      l.bottom, 4, l.top - l.bottom, '#8a4f1c');  // dark
-    px(l.x + 1,  l.bottom, 2, l.top - l.bottom, '#c08030');  // mid
-    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#8a4f1c');
-    px(l.x + 18, l.bottom, 2, l.top - l.bottom, '#c08030');
-    // rungs
+    // rails (twisted vine look)
+    px(l.x,      l.bottom, 4, l.top - l.bottom, '#5a3818');
+    px(l.x + 1,  l.bottom, 2, l.top - l.bottom, '#8a5a28');
+    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#5a3818');
+    px(l.x + 18, l.bottom, 2, l.top - l.bottom, '#8a5a28');
+    // rungs (carved wood)
     for (let r = 0; r <= rungs; r++) {
       const ry = l.bottom + r * 16;
-      px(l.x + 2, ry, 16, 2, '#6a3a14');                      // dark base
-      px(l.x + 2, ry, 16, 1, '#a06020');                      // highlight
+      px(l.x + 2, ry, 16, 2, '#3a2208');
+      px(l.x + 2, ry, 16, 1, '#7a4f28');
     }
   }
 }
@@ -1878,64 +2028,210 @@ function drawGoal() {
 }
 
 /* DK-style sky (no scrolling; deep purple-ish at the top) */
+/* ============================================================================
+   PLATFORM-MODE BACKGROUND — rich DK-style night city with multiple parallax
+   layers, animated stars, shooting stars, fireflies, fog, and a giant moon.
+   Each layer scrolls at a different speed (none, very slow, slow, fast) to
+   create the illusion of depth.
+   ============================================================================ */
+const _shootingStars = [];
+const _fireflies = [];
+
+/* ============================================================================
+   SNES-STYLE SPRITE PRIMITIVES
+   Pre-rendered shapes with highlights and shadows. Each "leaf cluster" is
+   several overlapping ellipses with different greens, like a DKC background.
+   ============================================================================ */
+function drawLeafCluster(cx, cy, scale, hue) {
+  // hue 0=lime, 1=jungle-green, 2=dark, 3=lime-light
+  const cols = [
+    [ 60, 130,  40],   // dark base
+    [ 90, 170,  60],   // mid
+    [140, 210,  80],   // highlight
+    [180, 230, 110],   // light highlight
+  ];
+  // 3-5 overlapping leaves in a fan
+  const n = 3 + (scale * 2 | 0);
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI/2 + (i - n/2) * 0.5;
+    const r = 6 + (i % 3) * 2;
+    const lx = cx + Math.cos(a) * 4 * scale;
+    const ly = cy + Math.sin(a) * 4 * scale;
+    const c = cols[(i + hue) % cols.length];
+    ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, r * scale, r * 0.6 * scale, a, 0, Math.PI*2);
+    ctx.fill();
+    // leaf vein highlight
+    ctx.fillStyle = `rgba(200,240,150,.4)`;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly - 1, r * scale * 0.6, 1, a, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function drawVine(x, y, len, sway) {
+  // hanging vine: wavy line
+  ctx.strokeStyle = '#2a4a18';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (let i = 0; i <= len; i += 4) {
+    const xx = x + Math.sin((i + sway) * 0.1) * 4;
+    ctx.lineTo(xx, y + i);
+  }
+  ctx.stroke();
+  // leaf at the tip
+  drawLeafCluster(x + Math.sin((len + sway) * 0.1) * 4, y + len, 1.2, 1);
+}
+
+function drawBanana(x, y) {
+  // yellow crescent banana with a brown tip
+  ctx.fillStyle = '#f5c020';
+  ctx.beginPath();
+  ctx.ellipse(x, y, 5, 8, -0.4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#a07010';
+  px(x - 4, y - 4, 2, 2, '#7a5010');   // stem
+  ctx.fillStyle = '#ffe060';
+  ctx.beginPath();
+  ctx.ellipse(x - 1, y, 2, 5, -0.4, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawFern(x, y, h) {
+  // frond: a curve of small leaves
+  ctx.fillStyle = '#3a8020';
+  for (let i = 0; i < h; i += 3) {
+    const sway = Math.sin(i * 0.3) * 4;
+    ctx.beginPath();
+    ctx.ellipse(x + sway - 3, y - i, 3, 1.5, -0.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + sway + 3, y - i, 3, 1.5, 0.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // central stem
+  ctx.fillStyle = '#2a5018';
+  ctx.fillRect(x - 1, y - h, 2, h);
+}
+
 function drawPlatformBackground() {
   const t = performance.now() / 1000;
-  // ─── Sky gradient (deeper top, warmer bottom for sunset feel) ───
-  const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0,    '#0a0a2a');
-  g.addColorStop(0.3,  '#1a1a4a');
-  g.addColorStop(0.7,  '#3a3a7a');
-  g.addColorStop(1,    '#6a5a9a');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
-  // ─── Stars (parallax: gently twinkling) ───
-  for (let i = 0; i < 50; i++) {
-    const sx = (i * 73) % W;
-    const sy = (i * 37) % 200 + 10;
-    const tw = (t * 1.5 + i * 0.7) % 3;
-    const sz = 1 + (i % 3 === 0 ? 1 : 0);
-    if (tw < 2.5) px(sx, sy, sz, sz, '#fff');
-    else          px(sx, sy, sz, sz, 'rgba(255,255,255,.4)');
+
+  // ─── Sky gradient (only a sliver visible at the top) ───
+  const g = ctx.createLinearGradient(0, 0, 0, 200);
+  g.addColorStop(0,    '#2a1a4a');
+  g.addColorStop(0.4,  '#5a3a6a');
+  g.addColorStop(1,    '#a06050');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 200);
+
+  // ─── Tree trunk silhouettes (very far) ───
+  ctx.fillStyle = '#1a2a18';
+  for (let i = 0; i < 8; i++) {
+    const tx = (i * 130) - (t * 3) % (W + 200);
+    const th = 120 + Math.sin(i) * 30;
+    ctx.fillRect(tx, 0, 30, th);
   }
-  // ─── Big moon (with craters) ───
-  const moonX = W - 110, moonY = 70;
-  // moon glow
-  px(moonX - 50, moonY - 50, 100, 100, 'rgba(255,245,200,.08)');
-  px(moonX - 35, moonY - 35, 70, 70, 'rgba(255,245,200,.12)');
-  // moon body
-  px(moonX - 30, moonY - 30, 60, 60, '#fff5d0');
-  px(moonX - 30, moonY - 30, 60, 4, '#ffffff');
-  // craters
-  px(moonX - 18, moonY - 12, 6, 5, '#e6d4a4');
-  px(moonX - 4,  moonY - 18, 4, 4, '#e6d4a4');
-  px(moonX + 8,  moonY - 4,  3, 3, '#e6d4a4');
-  px(moonX - 10, moonY + 8,  4, 3, '#e6d4a4');
-  // moon shadow (crescent effect on left)
-  px(moonX - 30, moonY - 30, 16, 60, 'rgba(20,20,40,.4)');
-  // ─── Far city (back layer — slow parallax) ───
-  ctx.fillStyle = '#15153a';
-  for (let x = 0; x < W + 60; x += 28) {
-    const h = 40 + Math.sin(x * 0.05) * 18 + Math.sin(x * 0.13) * 12;
-    ctx.fillRect(x - (t * 6) % 28, GROUND_Y - 100 - h, 22, h);
+  // distant banana bunches peeking above the canopy
+  for (let i = 0; i < 4; i++) {
+    const bx = (i * 220 + 60) - (t * 4) % (W + 200);
+    drawBanana(bx, 30 + i * 5);
+    drawBanana(bx + 6, 34 + i * 5);
   }
-  // ─── Mid city (closer) ───
-  ctx.fillStyle = '#0a0a26';
-  for (let x = 0; x < W + 60; x += 36) {
-    const h = 55 + Math.sin(x * 0.07) * 22 + Math.sin(x * 0.19) * 14;
-    ctx.fillRect(x - (t * 12) % 36, GROUND_Y - 80 - h, 28, h);
-    // windows
-    for (let wy = 0; wy < h - 6; wy += 6) {
-      for (let wx = 4; wx < 22; wx += 6) {
-        if (((x + wy + wx) | 0) % 3 === 0) {
-          px(x - ((t * 12) % 36) + wx, GROUND_Y - 80 - h + wy + 2, 2, 2, '#ffd86b');
-        }
-      }
+
+  // ─── Far jungle canopy (layer 1 — slowest parallax, dark green) ───
+  for (let i = 0; i < 16; i++) {
+    const cx = (i * 65) - (t * 5) % 80;
+    const cy = 90 + Math.sin(i * 0.7) * 8;
+    drawLeafCluster(cx, cy, 1.6, 2);   // dark green
+  }
+
+  // ─── Mid canopy (layer 2 — medium parallax, mid green) ───
+  for (let i = 0; i < 14; i++) {
+    const cx = (i * 75) - (t * 9) % 100;
+    const cy = 130 + Math.sin(i * 0.9) * 6;
+    drawLeafCluster(cx, cy, 1.8, 1);   // jungle-green
+  }
+
+  // ─── Hanging vines (from canopy down toward middle of screen) ───
+  for (let i = 0; i < 5; i++) {
+    const vx = (i * 190 + 40) - (t * 6) % 200;
+    if (vx > -20 && vx < W + 20) {
+      drawVine(vx, 100 + i * 5, 60 + i * 8, t * 30 + i);
     }
   }
-  // ─── Near silhouette (foreground towers) ───
-  ctx.fillStyle = '#000018';
-  for (let x = 0; x < W + 60; x += 50) {
-    const h = 30 + Math.sin(x * 0.09) * 15;
-    ctx.fillRect(x - (t * 20) % 50, GROUND_Y - 50 - h, 40, h);
+
+  // ─── Big ferns in the mid-ground ───
+  for (let i = 0; i < 6; i++) {
+    const fx = (i * 165 + 50) - (t * 12) % (W + 100);
+    if (fx > -30 && fx < W + 30) {
+      drawFern(fx, GROUND_Y - 40, 30 + (i % 3) * 10);
+    }
+  }
+
+  // ─── Front canopy (layer 3 — fastest, lime highlight) ───
+  for (let i = 0; i < 12; i++) {
+    const cx = (i * 85) - (t * 16) % 120;
+    const cy = 170 + Math.sin(i * 1.1 + t) * 4;
+    drawLeafCluster(cx, cy, 2.2, 0);   // lime green (front, bright)
+    drawLeafCluster(cx + 20, cy + 4, 1.4, 3);  // lime-light mix
+  }
+
+  // ─── Background dirt wall behind the platforms (texture) ───
+  ctx.fillStyle = '#3a2418';
+  ctx.fillRect(0, GROUND_Y - 100, W, 100);
+  // dirt speckles for texture
+  for (let i = 0; i < 60; i++) {
+    const dx = (i * 47) % W;
+    const dy = GROUND_Y - 90 + (i * 19) % 80;
+    px(dx, dy, 2, 2, i % 3 === 0 ? '#5a3a20' : '#2a1a08');
+  }
+  // a few small rocks embedded
+  for (let i = 0; i < 8; i++) {
+    const rx = (i * 113 + 30) % W;
+    const ry = GROUND_Y - 30 - (i * 7) % 40;
+    px(rx, ry, 6, 5, '#5a4030');
+    px(rx, ry, 6, 1, '#6a5040');  // top highlight
+    px(rx, ry + 4, 6, 1, '#1a0a04');  // bottom shadow
+  }
+
+  // ─── Floor (the actual ground) — dirt with grass top ───
+  px(0, GROUND_Y, W, H - GROUND_Y, '#5a3a20');
+  px(0, GROUND_Y, W, 6, '#3a8a30');   // grass top
+  px(0, GROUND_Y, W, 2, '#5ac84a');   // grass highlight
+  // dirt texture on floor
+  for (let i = 0; i < 80; i++) {
+    const dx = (i * 23) % W;
+    const dy = GROUND_Y + 8 + (i * 11) % 50;
+    px(dx, dy, 1, 1, i % 4 === 0 ? '#3a2410' : '#7a5028');
+  }
+  // little grass blades
+  for (let i = 0; i < 30; i++) {
+    const gx = (i * 37) % W;
+    px(gx, GROUND_Y - 4, 1, 5, '#3a8a30');
+    px(gx + 1, GROUND_Y - 3, 1, 4, '#5ac84a');
+  }
+
+  // ─── A few fireflies for life ───
+  if (Math.random() < 0.05) {
+    _fireflies.push({
+      x: rand(0, W), y: rand(50, GROUND_Y - 100),
+      phase: rand(0, Math.PI*2),
+      color: Math.random() < 0.5 ? '#ffe680' : '#a0ffb0',
+      life: rand(4, 7),
+    });
+  }
+  for (let i = _fireflies.length - 1; i >= 0; i--) {
+    const f = _fireflies[i];
+    f.life -= 0.016;
+    if (f.life <= 0) { _fireflies.splice(i, 1); continue; }
+    f.x += Math.sin(t * 1.5 + f.phase) * 0.4;
+    f.y += Math.cos(t * 1.2 + f.phase * 0.7) * 0.3;
+    const pulse = 0.5 + Math.sin(t * 4 + f.phase) * 0.5;
+    px(f.x - 3, f.y - 3, 7, 7, `rgba(255,230,128,${0.15 * pulse})`);
+    px(f.x - 2, f.y - 2, 5, 5, `rgba(255,230,128,${0.3 * pulse})`);
+    px(f.x, f.y, 1, 1, f.color);
   }
 }
 
@@ -1982,6 +2278,7 @@ function draw() {
     drawPickups();
     drawObstacles();
   }
+  drawAirStreaks();   // whoosh lines when falling fast
   drawCat();
   drawParticles();
   drawPops();
