@@ -376,13 +376,15 @@ const world = {
   mode: 'endless',
   // platform-mode state
   level: 1,
-  lives: 3,
+  lives: 5,            // 5 lives (was 3) — more forgiving for kids
   levelFish: 0,        // fish collected in the current level
   levelGoal: 3,        // how many fish needed to clear the level
   levelComplete: false,
   levelCompleteTimer: 0,
   ladderClimbSpeed: 160,
   onLadder: null,      // the ladder the cat is currently climbing (or null)
+  levelBanner: 0,      // counts down from 2.5s when a level starts; HUD shows 'LEVEL N' during this time
+  checkpoint: { x: 60, y: 0 },   // where the cat respawns after dying; updated halfway through each level
 };
 
 /* ---------- Entities ---------- */
@@ -466,7 +468,7 @@ function startWithMode(mode) {
   world.mode = mode;
   if (mode === 'platform') {
     world.level = 1;
-    world.lives = 3;
+    world.lives = 5;          // 5 lives (was 3) — more forgiving for kids
     world.fish = 0;
     world.stomps = 0;
   }
@@ -636,7 +638,7 @@ function reset() {
   world.distance = 0; world.fish = 0; world.stomps = 0;
   world.spawnTimer = 1.0; world.spawnInterval = 1.4;
   world.shake = 0; world.flash = 0;
-  world.lives = 3;
+  world.lives = 5;          // 5 lives (was 3) — more forgiving for kids
   obstacles.length = 0; pickups.length = 0;
   particles.length = 0; pops.length = 0;
   cat.x = 140; cat.y = GROUND_Y - 70;
@@ -775,15 +777,17 @@ function loadLevel(n) {
   for (const p of lvl.platforms) platforms.push({ ...p });
   for (const l of lvl.ladders)   ladders.push({ ...l });
   for (const it of lvl.items)    levelItems.push({ ...it, taken: false, bob: rand(0, Math.PI*2) });
+  // Place the cat on the floor (index 0) at the start. cat.h is the cat's full
+  // height; cat stands with its bottom on the platform's top.
+  const floor = platforms[0];
   world.levelGoal = lvl.items.filter(i => i.kind === 'fish').length;
   world.levelFish = 0;
   world.levelComplete = false;
   world.levelCompleteTimer = 0;
+  world.levelBanner = 2.5;          // show "LEVEL N" banner for 2.5s
+  world.checkpoint = { x: 60, y: floor.y - cat.h };   // default respawn = level start
   goal = { ...lvl.goal };
 
-  // Place the cat on the floor (index 0) at the start. cat.h is the cat's full
-  // height; cat stands with its bottom on the platform's top.
-  const floor = platforms[0];
   cat.x = 60;
   cat.y = floor.y - cat.h;
   cat.vx = 0; cat.vy = 0; cat.onGround = true; cat.duck = false;
@@ -798,7 +802,7 @@ function loadLevel(n) {
       obstacles.push({
         kind: 'dog', x: p.x + p.w/2 - 25, y: p.y - 48,
         w: 50, h: 48, duckable: false,
-        platform: p, dir: d.dir, speed: 80 + world.level * 20,
+        platform: p, dir: d.dir, speed: 50 + world.level * 15,   // slower dogs (was 80+level*20) — easier to stomp or dodge
       });
     }
   }
@@ -807,8 +811,8 @@ function loadLevel(n) {
     for (let i = 0; i < lvl.barrels; i++) {
       const top = platforms[platforms.length - 1];
       barrels.push({
-        x: top.x + 40 + i * 30, y: top.y - 26,
-        w: 26, h: 26, vx: 80 + world.level * 20, vy: 0,
+        x: top.x + 40 + i * 200, y: top.y - 26,    // spaced 200px apart (was 30) — gives time to react
+        w: 26, h: 26, vx: 60 + world.level * 15, vy: 0,    // slower (was 80+level*20)
         platform: top, falling: false, fallVy: 0,
       });
     }
@@ -1100,6 +1104,17 @@ function updatePlatform(dt) {
       loadLevel(world.level);
     }
   }
+
+  // level banner countdown
+  if (world.levelBanner > 0) world.levelBanner -= dt;
+
+  // checkpoint: when the cat crosses the midpoint of the level (x>=450)
+  // and is on the floor, set the checkpoint there so dying past the
+  // midpoint respawns you at the midpoint instead of the start.
+  if (cat.x >= 450 && world.checkpoint.x < 450) {
+    const floor = platforms[0];
+    world.checkpoint = { x: 460, y: floor.y - cat.h };
+  }
 }
 
 let _wasAbovePlatform = false;  // for the stomp check in platform mode
@@ -1109,9 +1124,9 @@ function loseLife() {
   world.lives--;
   sfx.hit();
   if (world.lives <= 0) { gameOver(); return; }
-  // respawn at start of level
-  cat.x = 60; cat.y = GROUND_Y - cat.h;
-  cat.vx = 0; cat.vy = 0; cat.invincible = 1.5; cat.squash = 0;
+  // respawn at the last checkpoint (or level start if no checkpoint hit yet)
+  cat.x = world.checkpoint.x; cat.y = world.checkpoint.y;
+  cat.vx = 0; cat.vy = 0; cat.invincible = 2.5; cat.squash = 0;   // 2.5s i-frames (was 1.5s) — more recovery time for kids
   world.onLadder = null;
 }
 
@@ -2396,6 +2411,29 @@ function draw() {
     const a = world.flash * 0.7;
     ctx.fillStyle = `rgba(255,80,80,${a})`;
     ctx.fillRect(0, 0, W, H);
+  }
+  // ─── "LEVEL N" banner at the start of each level (and on respawn) ───
+  if (world.levelBanner > 0 && world.mode === 'platform') {
+    const t = 1 - world.levelBanner / 2.5;  // 0..1 over the banner duration
+    const fadeOut = world.levelBanner < 0.6 ? world.levelBanner / 0.6 : 1;
+    // big chip
+    const cx = W/2, cy = H/2 - 60;
+    ctx.fillStyle = `rgba(20,20,30,${0.85 * fadeOut})`;
+    ctx.fillRect(cx - 200, cy - 38, 400, 76);
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 * fadeOut})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - 200, cy - 38, 400, 76);
+    // "LEVEL N" text
+    ctx.fillStyle = `rgba(255,255,255,${fadeOut})`;
+    ctx.font = 'bold 28px -apple-system, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('LEVEL ' + world.level, cx, cy - 4);
+    // subtitle (level hint)
+    const subs = ['', 'Easy start — find the fish!', 'Dogs patrol — jump on them!', 'Barrels roll — dodge!'];
+    ctx.font = '14px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = `rgba(255,220,120,${fadeOut})`;
+    ctx.fillText(subs[world.level] || '', cx, cy + 22);
+    ctx.textAlign = 'left';
   }
   if (world.paused && world.started && !world.over) {
     ctx.fillStyle = 'rgba(0,0,0,.5)';

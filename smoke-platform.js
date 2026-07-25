@@ -59,7 +59,7 @@ async function waitForServer(port, timeout = 5000) {
   console.log('after starting platform mode:', JSON.stringify(state));
   if (state.mode !== 'platform') errs.push('mode not set to platform');
   if (state.level !== 1) errs.push('level not 1');
-  if (state.lives !== 3) errs.push('lives not 3');
+  if (state.lives !== 5) errs.push('lives not 5: ' + state.lives);
   if (state.nPlatforms < 3) errs.push('not enough platforms loaded');
 
   // Check internal arrays via window globals (need to expose them)
