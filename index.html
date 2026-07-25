@@ -133,6 +133,11 @@
       transition: transform .08s ease;
     }
     .btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+    .btn-alt {
+      background: #6a4fc9;
+      border-bottom-color: #4a2fa0;
+    }
+    .btn-alt:active { border-bottom-color: #4a2fa0; }
     .credits {
       position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
       font-weight: 900; font-size: clamp(14px, 2.4vw, 18px);
@@ -287,9 +292,15 @@
             <span class="key">↓</span>
             <span class="key">S</span>
             <span class="key">Duck</span>
+            <span class="key">↑↓</span>
+            <span class="key">Climb</span>
           </div>
-          <p>Click PLAY or press SPACE to start.</p>
-          <button class="btn" id="startBtn">▶ PLAY</button>
+          <p style="margin-top:12px"><b>Choose a game mode:</b></p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="btn" id="startBtn" data-mode="endless">🏃 ENDLESS</button>
+            <button class="btn btn-alt" id="platformBtn" data-mode="platform">🪜 PLATFORM</button>
+          </div>
+          <p style="font-size:12px;margin-top:10px">Endless: run forever. Platform: climb ladders, grab all the fish, reach the goal 🏁</p>
         </div>
       </div>
     </div>
@@ -361,6 +372,17 @@ const world = {
   spawnInterval: 1.4,
   jumpHeld: false,
   duckHeld: false,
+  // mode: 'endless' (the original side-scroller) or 'platform' (Donkey Kong-style levels)
+  mode: 'endless',
+  // platform-mode state
+  level: 1,
+  lives: 3,
+  levelFish: 0,        // fish collected in the current level
+  levelGoal: 3,        // how many fish needed to clear the level
+  levelComplete: false,
+  levelCompleteTimer: 0,
+  ladderClimbSpeed: 160,
+  onLadder: null,      // the ladder the cat is currently climbing (or null)
 };
 
 /* ---------- Entities ---------- */
@@ -386,6 +408,14 @@ const clouds    = [];
 const hills     = [];
 const grass     = [];
 const particles = [];
+/* ---------- Platform-mode entities (DK-style) ---------- */
+const platforms = [];   // { x, y, w, h }  horizontal girders to land on
+const ladders   = [];   // { x, y, h, platformBelow, platformAbove }  climbable rungs
+const levelItems = [];  // { x, y, kind: 'fish'|'banana'|'yarn', taken: false, bob: 0 }  collectibles for the level
+const barrels   = [];   // { x, y, vx, vy, platform }  DK-style rolling hazards (top platform only)
+let goal = null;        // { x, y, w, h }  the goal ribbon to reach at the end of a level
+
+/* ---------- Entities (declared at top of file) ---------- */
 const pops      = [];   // floating "+1" texts
 
 /* seed background */
@@ -425,10 +455,33 @@ cvs.addEventListener('touchstart', e => { e.preventDefault();
 }, { passive: false });
 cvs.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
 
+function startWithMode(mode) {
+  world.mode = mode;
+  if (mode === 'platform') {
+    world.level = 1;
+    world.lives = 3;
+    world.fish = 0;
+    world.stomps = 0;
+  }
+  if (!world.started) {
+    // initial start: reset() loads the level (which dispatches by world.mode)
+    reset();
+    startGame();
+  } else if (world.over) {
+    restart();
+  } else {
+    // mid-game mode switch: just reset
+    reset();
+  }
+}
+
 document.getElementById('startBtn').addEventListener('click', () => {
-  if (!world.started) startGame();
-  else if (world.over) restart();
+  startWithMode('endless');
 });
+const platformBtn = document.getElementById('platformBtn');
+if (platformBtn) {
+  platformBtn.addEventListener('click', () => startWithMode('platform'));
+}
 
 /* ---------- On-screen touch buttons (mobile) ---------- */
 (function setupTouchButtons() {
@@ -576,12 +629,421 @@ function reset() {
   world.distance = 0; world.fish = 0; world.stomps = 0;
   world.spawnTimer = 1.0; world.spawnInterval = 1.4;
   world.shake = 0; world.flash = 0;
+  world.lives = 3;
   obstacles.length = 0; pickups.length = 0;
   particles.length = 0; pops.length = 0;
   cat.x = 140; cat.y = GROUND_Y - 70;
   cat.vx = 0; cat.vy = 0;
   cat.onGround = true; cat.duck = false;
   cat.facing = 1; cat.squash = 0; cat.invincible = 0;
+  // mode-specific reset
+  if (world.mode === 'platform') {
+    loadLevel(world.level);
+  }
+}
+
+/* =====================================================================
+   PLATFORM MODE — Donkey Kong / SNES-era platformer
+   4-5 girders at different heights, 2-3 ladders between them.
+   Collect fish, reach the goal ribbon. Clear 3 levels to win.
+   ===================================================================== */
+
+/* Level data: each level is a list of platforms + ladders + items + goal.
+   Platforms are 14px-tall girders (think Donkey Kong). The y values
+   are measured from the top, so 380 means a girder near the bottom.
+   The bottom is the ground (GROUND_Y). The "ground" platform is
+   implicit (cat can stand on the world floor). */
+const LEVELS = [
+  // Level 1 — gentle intro
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },             // the floor itself
+      { x:  80, y: 360,            w: 280, h: 14 },
+      { x: 460, y: 360,            w: 360, h: 14 },
+      { x:  80, y: 240,            w: 380, h: 14 },
+      { x: 540, y: 240,            w: 280, h: 14 },
+      { x: 200, y: 120,            w: 500, h: 14 },
+    ],
+    ladders: [
+      { x: 200, top: 240, bottom: 360, height: 120 - 14 },  // up from 360 to 240
+      { x: 600, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 380, top: 120, bottom: 240, height: 120 - 14 },
+      { x: 300, top: 360, bottom: 446, height:  86 - 14 },  // floor to first girder
+    ],
+    items: [
+      { x: 140, y: 330, kind: 'fish' },
+      { x: 700, y: 330, kind: 'fish' },
+      { x: 200, y: 210, kind: 'fish' },
+      { x: 700, y: 210, kind: 'yarn' },
+      { x: 380, y:  90, kind: 'banana' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 0,
+  },
+  // Level 2 — dogs patrol the girders
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
+      { x:  60, y: 360, w: 250, h: 14 },
+      { x: 400, y: 360, w: 200, h: 14 },
+      { x: 650, y: 360, w: 250, h: 14 },
+      { x:  60, y: 240, w: 280, h: 14 },
+      { x: 420, y: 240, w: 180, h: 14 },
+      { x: 650, y: 240, w: 250, h: 14 },
+      { x: 200, y: 120, w: 500, h: 14 },
+    ],
+    ladders: [
+      { x: 180, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 480, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 180, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 480, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 720, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 380, top: 120, bottom: 240, height: 120 - 14 },
+    ],
+    items: [
+      { x: 120, y: 330, kind: 'fish' },
+      { x: 320, y: 330, kind: 'fish' },
+      { x: 550, y: 330, kind: 'fish' },
+      { x: 120, y: 210, kind: 'yarn' },
+      { x: 320, y: 210, kind: 'fish' },
+      { x: 720, y: 210, kind: 'fish' },
+      { x: 380, y:  90, kind: 'banana' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 1,
+    dogs: [
+      { platform: 1, dir: 1 },  // walks on platform index 1
+      { platform: 6, dir: -1 }, // walks on platform index 6 (right side)
+    ],
+  },
+  // Level 3 — barrels roll from the top
+  {
+    platforms: [
+      { x:   0, y: GROUND_Y - 14, w: 900, h: 14 },
+      { x:  40, y: 360, w: 220, h: 14 },
+      { x: 320, y: 360, w: 200, h: 14 },
+      { x: 580, y: 360, w: 280, h: 14 },
+      { x:  40, y: 240, w: 240, h: 14 },
+      { x: 360, y: 240, w: 200, h: 14 },
+      { x: 620, y: 240, w: 240, h: 14 },
+      { x: 100, y: 120, w: 700, h: 14 },
+    ],
+    ladders: [
+      { x: 140, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 420, top: 360, bottom: 446, height: 86 - 14 },
+      { x: 140, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 700, top: 240, bottom: 360, height: 120 - 14 },
+      { x: 460, top: 120, bottom: 240, height: 120 - 14 },
+    ],
+    items: [
+      { x: 100, y: 330, kind: 'fish' },
+      { x: 300, y: 330, kind: 'fish' },
+      { x: 500, y: 330, kind: 'fish' },
+      { x: 100, y: 210, kind: 'fish' },
+      { x: 300, y: 210, kind: 'yarn' },
+      { x: 500, y: 210, kind: 'fish' },
+      { x: 700, y: 210, kind: 'banana' },
+      { x: 200, y:  90, kind: 'fish' },
+      { x: 600, y:  90, kind: 'fish' },
+    ],
+    goal: { x: 800, y: 100, w: 60, h: 22 },
+    barrels: 2,
+    dogs: [
+      { platform: 1, dir: 1 },
+      { platform: 4, dir: -1 },
+    ],
+  },
+];
+
+function loadLevel(n) {
+  const lvl = LEVELS[(n - 1) % LEVELS.length];
+  platforms.length = 0;
+  ladders.length = 0;
+  levelItems.length = 0;
+  obstacles.length = 0;     // platform mode uses dogs as platform-patrolling obstacles
+  barrels.length = 0;
+  pickups.length = 0;      // not used in platform mode (we have levelItems)
+
+  for (const p of lvl.platforms) platforms.push({ ...p });
+  for (const l of lvl.ladders)   ladders.push({ ...l });
+  for (const it of lvl.items)    levelItems.push({ ...it, taken: false, bob: rand(0, Math.PI*2) });
+  world.levelGoal = lvl.items.filter(i => i.kind === 'fish').length;
+  world.levelFish = 0;
+  world.levelComplete = false;
+  world.levelCompleteTimer = 0;
+  goal = { ...lvl.goal };
+
+  // Place the cat on the floor (index 0) at the start. cat.h is the cat's full
+  // height; cat stands with its bottom on the platform's top.
+  const floor = platforms[0];
+  cat.x = 60;
+  cat.y = floor.y - cat.h;
+  cat.vx = 0; cat.vy = 0; cat.onGround = true; cat.duck = false;
+  cat.facing = 1; cat.squash = 0; cat.invincible = 0.5;
+  world.onLadder = null;
+
+  // Dogs that patrol specific platforms
+  if (lvl.dogs) {
+    for (const d of lvl.dogs) {
+      const p = platforms[d.platform];
+      if (!p) continue;
+      obstacles.push({
+        kind: 'dog', x: p.x + p.w/2 - 25, y: p.y - 48,
+        w: 50, h: 48, duckable: false,
+        platform: p, dir: d.dir, speed: 80 + world.level * 20,
+      });
+    }
+  }
+  // Barrels that roll on the top platform
+  if (lvl.barrels) {
+    for (let i = 0; i < lvl.barrels; i++) {
+      const top = platforms[platforms.length - 1];
+      barrels.push({
+        x: top.x + 40 + i * 30, y: top.y - 26,
+        w: 26, h: 26, vx: 80 + world.level * 20, vy: 0,
+        platform: top, falling: false, fallVy: 0,
+      });
+    }
+  }
+}
+
+function isOnLadder(x, y, w, h) {
+  // return the ladder the cat's center is on, or null
+  const cx = x + w/2, cy = y + h/2;
+  for (const l of ladders) {
+    if (cx >= l.x - 4 && cx <= l.x + 20 && cy >= l.bottom - 4 && cy <= l.top + 4) return l;
+  }
+  return null;
+}
+
+function platformAt(x, y, w, h) {
+  // return the platform whose top is at y+h (cat's feet)
+  for (const p of platforms) {
+    if (x + w > p.x && x < p.x + p.w && y + h <= p.y + 6 && y + h >= p.y - 4) return p;
+  }
+  return null;
+}
+
+function updatePlatform(dt) {
+  /* common cat physics (anim + blink) */
+  cat.anim += dt * 14;
+  cat.blink -= dt;
+  if (cat.blink <= 0) { cat.blinking = true; cat.blink = 0.12; }
+  else if (cat.blinking && cat.blink <= 0) { cat.blinking = false; cat.blink = 3 + Math.random() * 4; }
+  if (cat.squash > 0) cat.squash = Math.max(0, cat.squash - dt * 2.2);
+  if (cat.invincible > 0) cat.invincible = Math.max(0, cat.invincible - dt);
+
+  /* ladder detection */
+  const catW = cat.w, catH = cat.duck ? cat.h * 0.6 : cat.h;
+  const catY = cat.duck ? cat.y + cat.h * 0.4 : cat.y;
+  const ladderUnderMe = isOnLadder(cat.x, catY, catW, catH);
+  const upHeld    = keys.has('arrowup')    || keys.has('w');
+  const downHeld  = keys.has('arrowdown')  || keys.has('s');
+  // jump is SPACE only — arrow-up is reserved for ladder climbing
+  const jumpHeld  = keys.has(' ');
+  const leftHeld  = keys.has('arrowleft')  || keys.has('a');
+  const rightHeld = keys.has('arrowright') || keys.has('d');
+
+  // enter ladder: pressing up/down while on or under a ladder
+  if (!world.onLadder && ladderUnderMe && (upHeld || downHeld)) {
+    world.onLadder = ladderUnderMe;
+    cat.vx = 0; cat.vy = 0; cat.onGround = false;
+    // snap to ladder center
+    cat.x = ladderUnderMe.x - catW/2 + 10;
+  }
+  // leave ladder: pressing left/right OR jumping (jump is space-only; arrow-up
+  // is the climb key so it shouldn't kick the cat off the ladder)
+  const spaceJump = keys.has(' ');
+  if (world.onLadder && (leftHeld || rightHeld || (spaceJump && cat.vy <= 0))) {
+    if (spaceJump) cat.vy = -780;
+    world.onLadder = null;
+  }
+
+  if (world.onLadder) {
+    // climb up/down
+    const l = world.onLadder;
+    if (upHeld) {
+      cat.y -= world.ladderClimbSpeed * dt;
+      cat.facing = 1;
+    } else if (downHeld) {
+      cat.y += world.ladderClimbSpeed * dt;
+      cat.facing = 1;
+    }
+    // clamp to ladder range
+    if (cat.y < l.top - catH) {
+      // reached top platform
+      cat.y = l.top - catH;
+      const p = platformAt(cat.x, cat.y, catW, catH);
+      if (p) { cat.onGround = true; cat.vy = 0; }
+      world.onLadder = null;
+    } else if (cat.y + catH > l.bottom) {
+      // reached bottom (the floor)
+      cat.y = l.bottom - catH;
+      cat.onGround = true; cat.vy = 0;
+      world.onLadder = null;
+    }
+  } else {
+    // horizontal movement
+    const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
+    if (moveDir !== 0) {
+      cat.facing = moveDir;
+      const target = CAT_GROUND_SPEED * moveDir;
+      if (cat.vx < target)      cat.vx = Math.min(target, cat.vx + CAT_ACCEL * dt);
+      else if (cat.vx > target) cat.vx = Math.max(target, cat.vx - CAT_ACCEL * dt);
+    } else if (cat.onGround) {
+      if (cat.vx > 0)      cat.vx = Math.max(0, cat.vx - CAT_FRICTION * dt);
+      else if (cat.vx < 0) cat.vx = Math.min(0, cat.vx + CAT_FRICTION * dt);
+    }
+    cat.x += cat.vx * dt;
+
+    // jump
+    if (jumpHeld && cat.onGround) {
+      cat.vy = -780; cat.onGround = false; sfx.jump();
+    }
+    // release jump cuts
+    if (cat.invincible <= 0) {
+      const stillHolding = keys.has(' ') || keys.has('arrowup') || keys.has('w');
+      if (!stillHolding && cat.vy < -200) cat.vy = -200;
+    }
+
+    // gravity
+    const _prevY = cat.y;
+    if (!cat.onGround) { cat.vy += 1800 * dt; cat.y += cat.vy * dt; }
+
+    // landing on a platform (top side)
+    cat.onGround = false;
+    for (const p of platforms) {
+      // Was the cat on or above this platform last frame? (touching counts as "above")
+      const wasAboveOrOn = (_prevY + catH) <= p.y + 2;
+      // Is the cat now overlapping the top of the platform?
+      const nowOver  = cat.y + catH >= p.y && cat.y + catH <= p.y + 16;
+      const onHoriz  = cat.x + catW > p.x && cat.x < p.x + p.w;
+      if (wasAboveOrOn && nowOver && onHoriz) {
+        cat.y = p.y - catH; cat.vy = 0; cat.onGround = true;
+        if (cat.squash > 0.6) sfx.land();
+        break;
+      }
+    }
+    // fall off the bottom of the world → death
+    if (cat.y > H + 100) { gameOver(); return; }
+  }
+
+  // wall clamps
+  if (cat.x < 0) cat.x = 0;
+  if (cat.x + catW > W) cat.x = W - catW;
+
+  // dogs patrol their platforms
+  // detect whether the cat was above any platform (or floor) last frame
+  const catBottomLast = (catY + catH);
+  _wasAbovePlatform = false;
+  for (const p of platforms) {
+    if (cat.x + catW > p.x && cat.x < p.x + p.w && catBottomLast <= p.y + 4) {
+      _wasAbovePlatform = true; break;
+    }
+  }
+
+  for (const o of obstacles) {
+    if (o.kind !== 'dog' || !o.platform) continue;
+    o.x += o.dir * o.speed * dt;
+    if (o.x < o.platform.x) { o.x = o.platform.x; o.dir = 1; }
+    if (o.x + o.w > o.platform.x + o.platform.w) { o.x = o.platform.x + o.platform.w - o.w; o.dir = -1; }
+    // collision
+    if (cat.invincible <= 0 && rectsOverlap(cat.x, catY, catW, catH, o.x, o.y, o.w, o.h)) {
+      if (cat.vy > 50 && _wasAbovePlatform) { // stomp
+        obstacles.splice(obstacles.indexOf(o), 1);
+        world.stomps++; cat.vy = -520; cat.squash = 1; cat.invincible = 0.35;
+        sfx.stomp();
+      } else {
+        // hurt: lose a life
+        loseLife();
+        return;
+      }
+    }
+  }
+
+  // barrels
+  for (let i = barrels.length - 1; i >= 0; i--) {
+    const b = barrels[i];
+    if (b.falling) {
+      b.fallVy += 1200 * dt;
+      b.y += b.fallVy * dt;
+      // did it land on a platform below?
+      const land = platformAt(b.x, b.y, b.w, b.h);
+      if (land && b.y + b.h >= land.y && b.y + b.h <= land.y + 12) {
+        b.y = land.y - b.h; b.fallVy = 0; b.falling = false;
+        b.platform = land;
+      } else if (b.y > H + 30) {
+        barrels.splice(i, 1); continue;
+      }
+    } else {
+      // roll along platform
+      b.x += b.vx * dt;
+      if (b.x <= b.platform.x || b.x + b.w >= b.platform.x + b.platform.w) {
+        // fall off the edge
+        b.falling = true; b.fallVy = 0;
+        // alternate direction for variety
+        b.vx = -b.vx;
+      }
+    }
+    if (cat.invincible <= 0 && rectsOverlap(cat.x, catY, catW, catH, b.x, b.y, b.w, b.h)) {
+      loseLife(); return;
+    }
+  }
+
+  // items
+  for (const it of levelItems) {
+    if (it.taken) continue;
+    it.bob += dt * 3;
+    if (rectsOverlap(cat.x, catY, catW, catH, it.x - 14, it.y - 12, 28, 24)) {
+      it.taken = true;
+      const pts = it.kind === 'fish' ? 25 : (it.kind === 'yarn' ? 75 : 100);
+      if (it.kind === 'fish') { world.levelFish++; world.fish++; }
+      for (let k = 0; k < 14; k++) particles.push(makeParticle(it.x, it.y, 'gold'));
+      popText('+' + pts, it.x, it.y - 8, it.kind === 'fish' ? '#ffd86b' : '#ffae3d');
+      sfx.coin();
+      // win check
+      if (world.levelFish >= world.levelGoal) {
+        world.levelComplete = true;
+        world.levelCompleteTimer = 1.6;
+        popText('LEVEL CLEAR!', W/2, H/2 - 20, '#ffd86b');
+      }
+    }
+  }
+
+  // goal
+  if (goal && !world.levelComplete && rectsOverlap(cat.x, catY, catW, catH, goal.x, goal.y, goal.w, goal.h)) {
+    if (world.levelFish >= world.levelGoal) {
+      world.levelComplete = true;
+      world.levelCompleteTimer = 1.6;
+      popText('LEVEL CLEAR!', W/2, H/2 - 20, '#ffd86b');
+    } else {
+      popText('Need ' + (world.levelGoal - world.levelFish) + ' more 🐟', cat.x, cat.y - 20, '#ff6b6b');
+    }
+  }
+
+  // level complete → next level
+  if (world.levelComplete) {
+    world.levelCompleteTimer -= dt;
+    if (world.levelCompleteTimer <= 0) {
+      world.level++;
+      if (world.level > LEVELS.length) world.level = 1;  // loop
+      world.mode = 'platform';
+      loadLevel(world.level);
+    }
+  }
+}
+
+let _wasAbovePlatform = false;  // for the stomp check in platform mode
+
+function loseLife() {
+  if (cat.invincible > 0) return;
+  world.lives--;
+  sfx.hit();
+  if (world.lives <= 0) { gameOver(); return; }
+  // respawn at start of level
+  cat.x = 60; cat.y = GROUND_Y - cat.h;
+  cat.vx = 0; cat.vy = 0; cat.invincible = 1.5; cat.squash = 0;
+  world.onLadder = null;
 }
 
 function gameOver() {
@@ -656,12 +1118,7 @@ function popText(txt, x, y, c='#ffd86b') { pops.push({ txt, x, y, life: 1.0, c }
 
 /* ---------- Update ---------- */
 let lastT = performance.now();
-function update(now) {
-  const dt = Math.min(0.05, (now - lastT) / 1000);
-  lastT = now;
-
-  if (!world.started || world.paused || world.over) { draw(); requestAnimationFrame(update); return; }
-
+function updateEndless(dt) {
   /* input */
   cat.duck = keys.has('arrowdown') || keys.has('s');
   if ((keys.has(' ') || keys.has('arrowup') || keys.has('w')) && cat.onGround) catJump();
@@ -730,9 +1187,6 @@ function update(now) {
     o.x -= world.scrollSpeed * dt;
     if (o.kind === 'bird') { o.y += Math.sin((o.phase += dt * 8)) * 0.6; }
   }
-
-  /* ground clamp is moved AFTER obstacle collision, so a stomp can lift the cat
-     back into the air before it gets snapped to the floor */
 
   /* collide + stomp check (Mario-style) */
   for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -817,13 +1271,54 @@ function update(now) {
   world.distance += world.scrollSpeed * dt * 0.05;
   if (world.shake > 0) world.shake -= dt;
   if (world.flash > 0) world.flash -= dt;
+}
 
-  /* HUD */
+function updateParticlesOnly(dt) {
+  /* particles */
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.vy += 400 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  /* popups */
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    p.life -= dt;
+    p.y -= 30 * dt;
+    if (p.life <= 0) pops.splice(i, 1);
+  }
+  if (world.shake > 0) world.shake -= dt;
+  if (world.flash > 0) world.flash -= dt;
+}
+
+function updateHUD() {
   document.getElementById('scoreBadge').textContent = 'Score: ' + scoreVal();
   document.getElementById('fishBadge').textContent  = '🐟 ' + world.fish;
   document.getElementById('stompBadge').textContent = '🐾 ' + world.stomps;
   document.getElementById('bestBadge').textContent  = 'Best: ' + world.best;
-  document.getElementById('speedBadge').textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+  const speedEl = document.getElementById('speedBadge');
+  if (world.mode === 'platform') {
+    speedEl.textContent = 'L' + world.level + ' ❤️' + world.lives + ' 🎯' + world.levelFish + '/' + world.levelGoal;
+  } else {
+    speedEl.textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+  }
+}
+
+function update(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  if (!world.started || world.paused || world.over) { draw(); requestAnimationFrame(update); return; }
+
+  if (world.mode === 'platform') {
+    updatePlatform(dt);
+  } else {
+    updateEndless(dt);
+  }
+  updateParticlesOnly(dt);
+  updateHUD();
 
   draw();
   requestAnimationFrame(update);
@@ -1036,6 +1531,136 @@ function drawPickups() {
   }
 }
 
+/* ---------- Platform-mode drawing (DK-style) ---------- */
+function drawPlatforms() {
+  // girders — dark wood with metal rivets
+  for (let i = 0; i < platforms.length; i++) {
+    const p = platforms[i];
+    const isFloor = (i === 0);
+    const top = '#a05a2a', mid = '#7a3f1c', bot = '#5b2a10';
+    // girder body (3 horizontal bands for thickness)
+    px(p.x, p.y, p.w, 4, top);
+    px(p.x, p.y + 4, p.w, 6, mid);
+    px(p.x, p.y + 10, p.w, 4, bot);
+    // rivets
+    for (let rx = p.x + 12; rx < p.x + p.w; rx += 32) {
+      px(rx, p.y + 5, 3, 3, '#3a1a08');
+      px(rx, p.y + 6, 1, 1, '#c08050');
+    }
+    // end caps
+    px(p.x, p.y, 6, 14, '#3a1a08');
+    px(p.x + p.w - 6, p.y, 6, 14, '#3a1a08');
+    if (isFloor) {
+      // top of the floor is the "ground" — green grass on top of the wood
+      px(0, p.y, W, 2, '#6ec85a');
+    }
+  }
+  // ladders
+  for (const l of ladders) {
+    const rungs = Math.floor((l.top - l.bottom) / 16);
+    // rails
+    px(l.x,      l.bottom, 4, l.top - l.bottom, '#c08030');
+    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#c08030');
+    // rungs
+    for (let r = 0; r <= rungs; r++) {
+      const y = l.bottom + r * 16;
+      px(l.x + 2, y, 16, 4, '#a06020');
+    }
+  }
+}
+
+function drawLevelItems() {
+  for (const it of levelItems) {
+    if (it.taken) continue;
+    const yOff = Math.sin(it.bob) * 3;
+    if (it.kind === 'fish') {
+      const x = it.x, y = it.y + yOff;
+      px(x - 4, y - 4, 32, 28, 'rgba(255,240,120,.4)');
+      px(x + 2, y + 4, 20, 14, '#50b4e6');
+      px(x, y + 6, 6, 10, '#dc8c28');
+      px(x + 14, y + 6, 3, 3, '#fff');
+      px(x + 15, y + 7, 2, 2, '#000');
+    } else if (it.kind === 'banana') {
+      const x = it.x, y = it.y + yOff;
+      px(x, y, 16, 8, '#ffd84a');
+      px(x + 12, y - 2, 6, 4, '#7a5a10');
+      px(x, y, 4, 4, '#7a5a10');
+    } else if (it.kind === 'yarn') {
+      const x = it.x, y = it.y + yOff;
+      px(x - 4, y - 4, 28, 24, 'rgba(255,180,200,.4)');
+      px(x, y, 20, 16, '#ff7ab0');
+      px(x + 6, y + 4, 8, 8, '#ffd0e0');
+      // string trailing
+      px(x - 2, y + 14, 2, 2, '#ff7ab0');
+      px(x - 4, y + 16, 2, 2, '#ff7ab0');
+    }
+  }
+}
+
+function drawBarrels() {
+  for (const b of barrels) {
+    // shadow
+    px(b.x + 2, b.y + b.h - 3, b.w - 4, 2, 'rgba(0,0,0,.25)');
+    // barrel body (DK-style brown barrel with metal bands)
+    px(b.x + 2, b.y + 2, b.w - 4, b.h - 4, '#9a5020');
+    px(b.x, b.y + 4, b.w, 3, '#5b2a10');
+    px(b.x, b.y + b.h - 8, b.w, 3, '#5b2a10');
+    px(b.x + 2, b.y + 2, b.w - 4, 2, '#c07040');
+    // highlight
+    px(b.x + 4, b.y + 2, 2, b.h - 4, '#c08050');
+  }
+}
+
+function drawGoal() {
+  if (!goal) return;
+  // a colorful ribbon/pennant on a pole (DK-style Pauline rescue cue)
+  const gx = goal.x, gy = goal.y;
+  // pole
+  px(gx + 28, gy, 4, goal.h, '#6b4a20');
+  // flag
+  px(gx + 4, gy, 26, 14, '#ff4d6d');
+  px(gx + 4, gy + 14, 26, 4, '#ffd86b');
+  px(gx + 4, gy + 18, 26, 2, '#7ab8ff');
+  // text "GOAL"
+  px(gx + 8,  gy + 4,  2, 6, '#fff');
+  px(gx + 12, gy + 4,  2, 6, '#fff');
+  px(gx + 16, gy + 4,  2, 6, '#fff');
+  px(gx + 20, gy + 4,  2, 6, '#fff');
+  // sparkles
+  const t = performance.now() / 200;
+  for (let i = 0; i < 3; i++) {
+    const a = (t + i * 2.1) % (Math.PI * 2);
+    const sx = gx + 18 + Math.cos(a) * 18;
+    const sy = gy + 10 + Math.sin(a) * 8;
+    px(sx, sy, 2, 2, '#fff5b4');
+  }
+}
+
+/* DK-style sky (no scrolling; deep purple-ish at the top) */
+function drawPlatformBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  g.addColorStop(0, '#0a1a3a');
+  g.addColorStop(0.4, '#1a3a6a');
+  g.addColorStop(1, '#4a7ab0');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
+  // distant city silhouette (Donkey Kong NYC skyline vibe)
+  ctx.fillStyle = '#0a1a3a';
+  for (let x = 0; x < W; x += 30) {
+    const h = 30 + Math.sin(x * 0.05) * 15 + Math.sin(x * 0.13) * 10;
+    ctx.fillRect(x, GROUND_Y - 60 - h, 22, h);
+  }
+  // a moon
+  px(W - 100, 60, 40, 40, '#fff5d0');
+  px(W - 92, 68, 24, 24, '#1a3a6a');
+  // stars
+  for (let i = 0; i < 30; i++) {
+    const sx = (i * 73) % W;
+    const sy = (i * 37) % 100 + 20;
+    const tw = (performance.now() / 500 + i) % 2 < 1;
+    px(sx, sy, 2, 2, tw ? '#fff' : 'rgba(255,255,255,.4)');
+  }
+}
+
 function drawParticles() {
   for (const p of particles) {
     const a = clamp(p.life / p.max, 0, 1);
@@ -1067,9 +1692,18 @@ function draw() {
     const m = world.shake * 24;
     ctx.translate((Math.random()*2-1) * m, (Math.random()*2-1) * m);
   }
-  drawBackground();
-  drawPickups();
-  drawObstacles();
+  if (world.mode === 'platform') {
+    drawPlatformBackground();
+    drawLevelItems();
+    drawBarrels();
+    drawPlatforms();
+    drawObstacles();   // dogs
+    drawGoal();
+  } else {
+    drawBackground();
+    drawPickups();
+    drawObstacles();
+  }
   drawCat();
   drawParticles();
   drawPops();
@@ -1105,6 +1739,11 @@ window.__catRunner = {
 window.__cat = cat;        // read-only debug hook for tests
 window.__world = world;
 window.__obstacles = obstacles;
+window.__platforms = platforms;
+window.__ladders = ladders;
+window.__levelItems = levelItems;
+window.__barrels = barrels;
+window.__goal = () => goal;
 </script>
 </body>
 </html>
