@@ -394,6 +394,12 @@ const cat = {
   squash: 0,                  // stomp-squash timer (0..1, 0 = full size, 1 = flat)
   invincible: 0,              // stomp-bounce invincibility timer (seconds)
   anim: 0, blink: 0, blinking: false,
+  // Physics tuning (helps make the cat feel more "alive")
+  coyoteTime: 0,              // seconds of grace after walking off a ledge during which the cat can still jump
+  jumpBuffer: 0,              // seconds remaining of a queued jump (pressed just before landing)
+  wasOnGround: false,         // last-frame was on ground (used to detect coyote)
+  terminalVel: 1100,          // max downward speed
+  dropThroughTimer: 0,        // when > 0, ignore platform collisions (drop-down)
 };
 /* horizontal tuning — feel snappy like Mario */
 const CAT_GROUND_SPEED = 380;   // px/sec when running on ground
@@ -896,34 +902,63 @@ function updatePlatform(dt) {
     }
     cat.x += cat.vx * dt;
 
-    // jump
-    if (jumpHeld && cat.onGround) {
-      cat.vy = -780; cat.onGround = false; sfx.jump();
+    // ─── drop-through: DOWN + JUMP at the same moment drops through a platform.
+    // Must run BEFORE jump, otherwise a regular jump eats the input first.
+    if (downHeld && jumpHeld && cat.onGround && cat.dropThroughTimer <= 0) {
+      cat.dropThroughTimer = 0.25;   // 250ms of platform-ignore
+      cat.onGround = false;
+      cat.vy = 60;                   // gentle nudge down
+      cat.jumpBuffer = 0;            // don't queue a jump
     }
-    // release jump cuts
+    if (cat.dropThroughTimer > 0) cat.dropThroughTimer -= dt;
+
+    // ─── jump (with coyote time + jump buffer for responsive feel) ───
+    // coyote time: 100ms grace after leaving a ledge
+    // jump buffer: 120ms grace where pressing jump before landing still jumps
+    if (jumpHeld) cat.jumpBuffer = 0.12;
+    const canJump = cat.onGround || cat.coyoteTime > 0;
+    if (cat.dropThroughTimer <= 0 && cat.jumpBuffer > 0 && canJump) {
+      cat.vy = -780; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;
+      sfx.jump();
+    }
+    // release jump cuts (variable jump height)
     if (cat.invincible <= 0) {
-      const stillHolding = keys.has(' ') || keys.has('arrowup') || keys.has('w');
-      if (!stillHolding && cat.vy < -200) cat.vy = -200;
+      if (!jumpHeld && cat.vy < -200) cat.vy = -200;
     }
 
-    // gravity
+    // gravity (with terminal velocity cap)
     const _prevY = cat.y;
-    if (!cat.onGround) { cat.vy += 1800 * dt; cat.y += cat.vy * dt; }
+    if (!cat.onGround) {
+      cat.vy += 1800 * dt;
+      if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;
+      cat.y += cat.vy * dt;
+    }
 
     // landing on a platform (top side)
     cat.onGround = false;
-    for (const p of platforms) {
-      // Was the cat on or above this platform last frame? (touching counts as "above")
-      const wasAboveOrOn = (_prevY + catH) <= p.y + 2;
-      // Is the cat now overlapping the top of the platform?
-      const nowOver  = cat.y + catH >= p.y && cat.y + catH <= p.y + 16;
-      const onHoriz  = cat.x + catW > p.x && cat.x < p.x + p.w;
-      if (wasAboveOrOn && nowOver && onHoriz) {
-        cat.y = p.y - catH; cat.vy = 0; cat.onGround = true;
-        if (cat.squash > 0.6) sfx.land();
-        break;
+    // (skip platform landing if we're dropping through them)
+    if (cat.dropThroughTimer <= 0) {
+      for (const p of platforms) {
+        // Was the cat on or above this platform last frame? (touching counts as "above")
+        const wasAboveOrOn = (_prevY + catH) <= p.y + 2;
+        // Is the cat now overlapping the top of the platform?
+        const nowOver  = cat.y + catH >= p.y && cat.y + catH <= p.y + 16;
+        const onHoriz  = cat.x + catW > p.x && cat.x < p.x + p.w;
+        if (wasAboveOrOn && nowOver && onHoriz) {
+          cat.y = p.y - catH; cat.vy = 0; cat.onGround = true;
+          if (cat.squash > 0.6) sfx.land();
+          break;
+        }
       }
     }
+    // coyote time: if we were on ground last frame but aren't now, start the grace timer
+    if (cat.wasOnGround && !cat.onGround && cat.vy >= 0) {
+      cat.coyoteTime = 0.10;
+    }
+    if (cat.coyoteTime > 0) cat.coyoteTime -= dt;
+    if (cat.jumpBuffer > 0) cat.jumpBuffer -= dt;
+    cat.wasOnGround = cat.onGround;
+
     // fall off the bottom of the world → death
     if (cat.y > H + 100) { gameOver(); return; }
   }
@@ -1144,7 +1179,11 @@ function updateEndless(dt) {
   // remember the previous-frame bottom of the cat for stomp detection
   // (must be sampled BEFORE we move it, otherwise the side-bump path always wins)
   const _prevY = cat.y;
-  if (!cat.onGround) { cat.vy += grav * dt; cat.y += cat.vy * dt; }
+  if (!cat.onGround) {
+    cat.vy += grav * dt;
+    if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;  // cap fall speed
+    cat.y += cat.vy * dt;
+  }
 
   // horizontal friction when no input on the ground
   if (cat.onGround && moveDir === 0) {
@@ -1328,43 +1367,84 @@ function update(now) {
 function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x|0, y|0, w|0, h|0); }
 
 function drawBackground() {
-  /* sky gradient */
+  const t = performance.now() / 1000;
+  /* sky gradient (richer: top sky to mid blue to horizon haze) */
   const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0, '#6ebef0');
-  g.addColorStop(1, '#b4e6ff');
+  g.addColorStop(0,    '#5aaee8');
+  g.addColorStop(0.6,  '#a8d8f8');
+  g.addColorStop(1,    '#cce8f8');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
-
-  /* sun */
-  const sx = W - 110, sy = 70, sr = 36;
-  px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
-  px(sx - sr + 8, sy - sr + 8, (sr - 8) * 2, (sr - 8) * 2, '#fff5b4');
-
-  /* clouds */
-  for (const c of clouds) {
-    px(c.x, c.y, c.s, 22, '#ffffff');
-    px(c.x - 14, c.y + 8, 28, 18, '#ffffff');
-    px(c.x + c.s - 18, c.y + 6, 32, 20, '#ffffff');
-    px(c.x + 20, c.y - 8, 30, 18, '#ffffff');
+  // a few far clouds (parallax-slow, behind everything)
+  ctx.fillStyle = 'rgba(255,255,255,.5)';
+  for (let i = 0; i < 3; i++) {
+    const cx = (i * 320 - t * 4) % (W + 200) - 100;
+    const cy = 40 + i * 30;
+    ctx.beginPath();
+    ctx.ellipse(cx,      cy,  40, 10, 0, 0, Math.PI*2);
+    ctx.ellipse(cx + 25, cy - 4, 30, 12, 0, 0, Math.PI*2);
+    ctx.ellipse(cx - 25, cy - 2, 25, 9,  0, 0, Math.PI*2);
+    ctx.fill();
   }
 
-  /* hills */
+  /* sun (with glow halo) */
+  const sx = W - 110, sy = 70, sr = 36;
+  px(sx - sr - 16, sy - sr - 16, (sr + 16) * 2, (sr + 16) * 2, 'rgba(255,230,130,.18)');
+  px(sx - sr - 6,  sy - sr - 6,  (sr + 6) * 2,  (sr + 6) * 2,  'rgba(255,240,160,.25)');
+  px(sx - sr, sy - sr, sr * 2, sr * 2, '#ffe682');
+  px(sx - sr + 4, sy - sr + 4, (sr - 4) * 2, (sr - 4) * 2, '#fff0a8');
+  px(sx - sr + 10, sy - sr + 10, (sr - 10) * 2, (sr - 10) * 2, '#fff5b4');
+
+  /* clouds (foreground parallax) */
+  for (const c of clouds) {
+    // soft shadow underside
+    px(c.x + 2, c.y + 20, c.s, 4, 'rgba(180,210,230,.4)');
+    // body (3 layers for depth)
+    px(c.x - 14, c.y + 8,  28, 18, '#e8f0f8');
+    px(c.x + c.s - 18, c.y + 6, 32, 20, '#e8f0f8');
+    px(c.x + 20, c.y - 8,  30, 18, '#e8f0f8');
+    px(c.x, c.y, c.s, 22, '#ffffff');
+    px(c.x + 4, c.y, c.s - 8, 6, '#ffffff');   // top highlight
+  }
+
+  /* distant hills (back, soft) */
   for (const h of hills) {
     const cx = h.x, cy = GROUND_Y, rx = h.w / 2, ry = h.h;
     for (let dx = -rx; dx <= rx; dx += 4) {
       const t = dx / rx;
       if (t * t > 1) continue;
       const yo = Math.sqrt(1 - t * t) * ry;
-      const c = lerpColor('#78c86e', '#5aa658', t);
+      const c = lerpColor('#a8d68e', '#88c870', t);
       px(cx + dx, cy - yo, 4, yo + 8, c);
+    }
+    // hill highlight
+    for (let dx = -rx; dx <= rx; dx += 8) {
+      const t = dx / rx;
+      if (t * t > 1) continue;
+      const yo = Math.sqrt(1 - t * t) * ry;
+      px(cx + dx, cy - yo, 4, 2, '#b8e094');
     }
   }
 
-  /* ground */
-  px(0, GROUND_Y, W, H - GROUND_Y, '#6ec85a');
-  px(0, GROUND_Y, W, 6, '#50a046');
+  /* ground (with grass strip) */
+  px(0, GROUND_Y, W, H - GROUND_Y, '#7ad868');
+  px(0, GROUND_Y, W, 8, '#5ba84a');
+  px(0, GROUND_Y + 8, W, 2, '#9bea86');
 
-  /* grass tufts */
-  for (const g of grass) px(g.x, g.y, 2, -g.s, '#3c8c3c');
+  /* grass tufts (with little flowers) */
+  for (const g of grass) {
+    px(g.x, g.y, 2, -g.s, '#3c8c3c');
+    px(g.x + 2, g.y - 1, 1, -(g.s - 2), '#5ba84a');
+  }
+  // occasional flowers
+  for (let i = 0; i < 8; i++) {
+    const fx = (i * 137) % W;
+    const fy = GROUND_Y - 2;
+    const fbloom = (t * 2 + i) % 2 < 1;
+    if (fbloom) {
+      px(fx, fy - 4, 3, 3, '#fff5b4');
+      px(fx + 1, fy - 3, 1, 1, '#ff8aa8');
+    }
+  }
 }
 
 function lerpColor(a, b, t) {
@@ -1388,13 +1468,19 @@ function drawCat() {
     yOffset  = (h - h * yStretch) | 0;    // grow downward to keep feet on the ground
     h = (h * yStretch) | 0;
   }
+  // breathing idle: tiny scale pulse when standing still
+  if (cat.onGround && !ducking && Math.abs(cat.vx) < 20) {
+    const breath = Math.sin(performance.now() / 700) * 0.02;
+    yStretch -= breath;
+    yOffset = (cat.h - cat.h * yStretch) | 0;
+  }
   // invincibility flash: blink the cat on/off quickly
   const flashOn = (cat.invincible > 0) ? (Math.floor(performance.now() / 60) % 2 === 0) : true;
   // facing: flip the whole sprite horizontally when cat.facing === -1
   const flip = cat.facing === -1;
 
   /* shadow (no flip — shadow lives on the ground) */
-  px(x + 6, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 12, 5, 'rgba(0,0,0,.18)');
+  px(x + 4, (ducking ? cat.y + cat.h : cat.y + cat.h) - 4, cat.w - 8, 5, 'rgba(0,0,0,.22)');
   if (!flashOn) {
     // when flashing off, just draw a yellow silhouette so the player still knows where the cat is
     const sw = ((cat.w - 8) * xStretch) | 0;
@@ -1404,11 +1490,16 @@ function drawCat() {
     return;
   }
 
-  const body  = '#ffa55a';
-  const belly = '#ffdcb4';
-  const dark  = '#50321e';
-  const eye   = '#78dc3c';
-  const nose  = '#dc5a82';
+  // ─── Better palette ─────────────────────────────────────
+  const body   = '#ff9a4d';   // base fur (slightly more saturated)
+  const bodyHi = '#ffba7a';   // highlight
+  const bodyLo = '#d97a30';   // shadow
+  const belly  = '#ffe1c4';   // soft cream
+  const dark   = '#3d2410';   // outlines
+  const eyeBg  = '#78dc3c';   // green iris
+  const eyeHi  = '#a8f060';   // iris highlight
+  const nose   = '#dc5a82';
+  const blush  = '#ff9eb8';   // cheek
 
   // helper: place a rect, optionally flipped on X. xStretch / yStretch resize from the top-left.
   function p(px0, py0, pw, ph, color) {
@@ -1420,57 +1511,130 @@ function drawCat() {
   }
 
   if (!ducking) {
-    /* body */
+    // ─── Body (rounded with hi/lo shading) ─────────────
     p(10, 22, cat.w - 20, cat.h - 32, body);
-    /* head */
-    p(4, 0, cat.w - 8, 32, body);
-    /* ears */
-    p(6, -12, 14, 16, body);
-    p(cat.w - 20, -12, 14, 16, body);
-    p(9, -6, 8, 8, '#ff82a0');
-    p(cat.w - 17, -6, 8, 8, '#ff82a0');
-    /* eyes — green like the sticker */
+    p(10, 22, cat.w - 20, 3, bodyHi);                  // top highlight
+    p(10, cat.h - 12, cat.w - 20, 3, bodyLo);          // bottom shadow
+    // side dark accent (tabby side stripe)
+    p(8, 30, 4, cat.h - 40, bodyLo);
+
+    // ─── Head (rounded with cheek bulges) ─────────────
+    p(2, 0, cat.w - 4, 32, body);
+    p(2, 0, cat.w - 4, 3, bodyHi);                      // top highlight
+    p(2, 28, cat.w - 4, 4, bodyLo);                     // chin shadow
+
+    // ─── Ears (triangle-ish with pink inner) ───────────
+    p(4, -14, 16, 18, body);                            // left ear
+    p(cat.w - 20, -14, 16, 18, body);                    // right ear
+    p(7, -10, 10, 12, '#ff82a0');                       // left inner
+    p(cat.w - 17, -10, 10, 12, '#ff82a0');               // right inner
+    p(8, -8, 4, 4, '#ffc4d4');                           // left highlight
+    p(cat.w - 16, -8, 4, 4, '#ffc4d4');                  // right highlight
+
+    // ─── Cheek blush (kid-friendly touch) ──────────────
+    p(6, 22, 6, 3, blush);
+    p(cat.w - 12, 22, 6, 3, blush);
+
+    // ─── Eyes (bigger, with iris + pupil + sparkle) ─────
     const eyeY = 8;
     if (cat.blinking) {
-      p(14, eyeY + 1, 8, 2, '#000');
-      p(cat.w - 22, eyeY + 1, 8, 2, '#000');
+      // closed eyes — gentle curve
+      p(14, eyeY + 2, 8, 2, dark);
+      p(cat.w - 22, eyeY + 2, 8, 2, dark);
     } else {
-      p(14, eyeY, 8, 6, eye);
-      p(cat.w - 22, eyeY, 8, 6, eye);
-      p(17, eyeY + 1, 3, 4, '#000');
-      p(cat.w - 19, eyeY + 1, 3, 4, '#000');
-      p(19, eyeY + 1, 1, 1, '#fff');
-      p(cat.w - 17, eyeY + 1, 1, 1, '#fff');
+      // eye whites (rim)
+      p(13, eyeY - 1, 10, 9, '#fff');
+      p(cat.w - 23, eyeY - 1, 10, 9, '#fff');
+      // green iris
+      p(14, eyeY, 8, 7, eyeBg);
+      p(cat.w - 22, eyeY, 8, 7, eyeBg);
+      // iris highlight
+      p(14, eyeY, 8, 2, eyeHi);
+      p(cat.w - 22, eyeY, 8, 2, eyeHi);
+      // pupil (slightly off-center for that "looking" feel)
+      const lookX = flip ? -1 : 1;  // look forward (opposite of facing)
+      p(15 + lookX, eyeY + 2, 4, 5, dark);
+      p(cat.w - 21 + lookX, eyeY + 2, 4, 5, dark);
+      // sparkle highlight
+      p(16 + lookX, eyeY + 1, 2, 2, '#fff');
+      p(cat.w - 20 + lookX, eyeY + 1, 2, 2, '#fff');
+      // tiny bottom sparkle
+      p(19 + lookX, eyeY + 5, 1, 1, '#fff');
+      p(cat.w - 17 + lookX, eyeY + 5, 1, 1, '#fff');
     }
-    /* nose */
+
+    // ─── Nose (cute triangle) ─────────────
     p(cat.w/2 - 2, 18, 4, 3, nose);
-    p(cat.w/2, 21, 6, 1, dark);
-    p(cat.w/2 - 6, 21, 6, 1, dark);
-    /* whiskers */
-    p(2, 19, 8, 1, dark);
-    p(2, 22, 8, 1, dark);
-    p(cat.w - 10, 19, 8, 1, dark);
-    p(cat.w - 10, 22, 8, 1, dark);
-    /* belly */
+    p(cat.w/2 - 1, 21, 2, 1, dark);
+
+    // ─── Mouth (smiley) ─────────────
+    p(cat.w/2, 22, 5, 1, dark);
+    p(cat.w/2 - 5, 22, 5, 1, dark);
+    p(cat.w/2 - 1, 23, 1, 1, '#ff8aa8');
+
+    // ─── Whiskers (longer + slightly curved) ─────────────
+    p(0, 19, 10, 1, dark);
+    p(0, 22, 10, 1, dark);
+    p(cat.w - 10, 19, 10, 1, dark);
+    p(cat.w - 10, 22, 10, 1, dark);
+
+    // ─── Belly (cream patch with subtle outline) ─────────────
     p(18, 32, cat.w - 36, cat.h - 38, belly);
-    /* legs (run anim) */
+    p(18, 32, cat.w - 36, 2, '#fff0db');                // belly highlight
+
+    // ─── Tabby stripes (the orange-kitty signature) ─────────────
+    p(16, 26, 6, 2, bodyLo);
+    p(cat.w - 22, 26, 6, 2, bodyLo);
+    p(20, 38, 5, 2, bodyLo);
+    p(cat.w - 25, 38, 5, 2, bodyLo);
+    p(18, 48, 6, 2, bodyLo);
+    p(cat.w - 24, 48, 6, 2, bodyLo);
+
+    // ─── Legs (run anim: front leg forward, back leg back) ─────────────
     const legY = cat.h - 18;
-    const off  = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 0;
-    p(16 + off, legY, 8, 18, body);
-    p(cat.w - 24 - off, legY, 8, 18, body);
-    /* tail */
-    const tw = Math.round(Math.sin(cat.anim) * 6);
-    p(cat.w - 6, 24 + tw, 12, 8, body);
-    p(cat.w - 2, 18 + tw, 8, 10, body);
+    const stride = cat.onGround ? Math.round(Math.sin(cat.anim) * 5) : 3;
+    p(16 + stride, legY, 8, 18, body);
+    p(cat.w - 24 - stride, legY, 8, 18, body);
+    // paw shadows
+    p(16 + stride, legY + 16, 8, 2, bodyLo);
+    p(cat.w - 24 - stride, legY + 16, 8, 2, bodyLo);
+    // toe details
+    p(16 + stride, legY + 12, 2, 1, dark);
+    p(20 + stride, legY + 12, 2, 1, dark);
+    p(24 + stride, legY + 12, 2, 1, dark);
+    p(cat.w - 24 - stride, legY + 12, 2, 1, dark);
+    p(cat.w - 20 - stride, legY + 12, 2, 1, dark);
+    p(cat.w - 16 - stride, legY + 12, 2, 1, dark);
+
+    // ─── Tail (multi-segment with smooth wave) ─────────────
+    const tw1 = Math.round(Math.sin(cat.anim) * 6);
+    const tw2 = Math.round(Math.sin(cat.anim * 1.3 + 1) * 5);
+    const tw3 = Math.round(Math.sin(cat.anim * 1.7 + 2) * 4);
+    p(cat.w - 4,  26 + tw1, 10, 8, body);
+    p(cat.w + 2,  22 + tw2, 8, 7, body);
+    p(cat.w + 6,  18 + tw3, 6, 6, body);
+    // tail tip (lighter)
+    p(cat.w + 9,  17 + tw3, 5, 4, '#ffb27a');
   } else {
-    /* ducking — small low-profile cat, also flips */
-    const dy = 46; // approx (cat.h * 0.66) relative to y
+    // ─── Ducking (low profile, no tail) ─────────────
+    const dy = 46;
     p(8,  dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
     p(4,  dy - 4, cat.w - 8,  16, body);
+    p(4,  dy - 4, cat.w - 8, 2, bodyHi);
     p(8,  dy - 10, 8, 8, body);
     p(cat.w - 16, dy - 10, 8, 8, body);
-    p(cat.w - 18, dy + 1, 6, 4, eye);
-    p(cat.w - 16, dy + 2, 2, 2, '#000');
+    p(7,  dy - 7, 4, 4, '#ff82a0');
+    p(cat.w - 15, dy - 7, 4, 4, '#ff82a0');
+    p(cat.w - 18, dy + 1, 6, 4, eyeBg);
+    p(cat.w - 16, dy + 2, 2, 2, dark);
+    p(cat.w - 16, dy + 1, 1, 1, '#fff');                // eye sparkle
+  }
+
+  // ─── Running dust (when moving fast on ground) ─────────────
+  if (cat.onGround && Math.abs(cat.vx) > 250 && (performance.now() % 200) < 60) {
+    const dx = flip ? 12 : cat.w - 16;
+    px(x + dx, cat.y + cat.h - 4, 4, 3, 'rgba(220,220,220,.6)');
+    px(x + dx + (flip ? -6 : 6), cat.y + cat.h - 6, 3, 2, 'rgba(220,220,220,.4)');
   }
 }
 
@@ -1537,34 +1701,56 @@ function drawPlatforms() {
   for (let i = 0; i < platforms.length; i++) {
     const p = platforms[i];
     const isFloor = (i === 0);
-    const top = '#a05a2a', mid = '#7a3f1c', bot = '#5b2a10';
-    // girder body (3 horizontal bands for thickness)
-    px(p.x, p.y, p.w, 4, top);
-    px(p.x, p.y + 4, p.w, 6, mid);
-    px(p.x, p.y + 10, p.w, 4, bot);
-    // rivets
-    for (let rx = p.x + 12; rx < p.x + p.w; rx += 32) {
-      px(rx, p.y + 5, 3, 3, '#3a1a08');
-      px(rx, p.y + 6, 1, 1, '#c08050');
+    // ─── Soft drop shadow under the platform ───
+    if (!isFloor) {
+      px(p.x + 2, p.y + 14, p.w - 4, 4, 'rgba(0,0,0,.18)');
+      px(p.x + 6, p.y + 18, p.w - 12, 3, 'rgba(0,0,0,.10)');
     }
-    // end caps
-    px(p.x, p.y, 6, 14, '#3a1a08');
-    px(p.x + p.w - 6, p.y, 6, 14, '#3a1a08');
+    // ─── Wood grain body (4 layers for richness) ───
+    px(p.x, p.y,     p.w, 2, '#c87038');  // bright top
+    px(p.x, p.y + 2, p.w, 4, '#a05a2a');  // top mid
+    px(p.x, p.y + 6, p.w, 5, '#7a3f1c');  // main
+    px(p.x, p.y + 11, p.w, 3, '#5b2a10'); // dark bottom
+    // wood grain lines (subtle vertical streaks)
+    for (let gx = p.x + 8; gx < p.x + p.w - 8; gx += 14) {
+      px(gx, p.y + 2, 1, 9, 'rgba(90,50,20,.4)');
+    }
+    // rivets (with highlight)
+    for (let rx = p.x + 12; rx < p.x + p.w; rx += 32) {
+      px(rx,     p.y + 5, 3, 3, '#2a1408');                 // dark base
+      px(rx,     p.y + 5, 3, 1, '#3a1a08');                 // top dark
+      px(rx + 1, p.y + 6, 1, 1, '#c08050');                 // highlight
+    }
+    // end caps (darker, with highlight)
+    px(p.x,         p.y,     6, 14, '#2a1408');
+    px(p.x + 1,     p.y,     4, 2,  '#5b2a10');
+    px(p.x + p.w - 6, p.y,   6, 14, '#2a1408');
+    px(p.x + p.w - 5, p.y,   4, 2,  '#5b2a10');
     if (isFloor) {
-      // top of the floor is the "ground" — green grass on top of the wood
-      px(0, p.y, W, 2, '#6ec85a');
+      // top of the floor is the "ground" — green grass strip on top of the wood
+      px(0, p.y, W, 3, '#7ad868');
+      px(0, p.y + 3, W, 1, '#5ba84a');
+      // grass blades poking up
+      for (let gx = 0; gx < W; gx += 18) {
+        const bladeH = 4 + ((gx * 7) % 4);
+        px(gx, p.y - bladeH, 1, bladeH, '#5ba84a');
+        px(gx + 1, p.y - bladeH + 1, 1, bladeH - 1, '#7ad868');
+      }
     }
   }
-  // ladders
+  // ─── Ladders (with side highlights) ───
   for (const l of ladders) {
     const rungs = Math.floor((l.top - l.bottom) / 16);
-    // rails
-    px(l.x,      l.bottom, 4, l.top - l.bottom, '#c08030');
-    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#c08030');
+    // rails (slightly rounded via 3-stop gradient)
+    px(l.x,      l.bottom, 4, l.top - l.bottom, '#8a4f1c');  // dark
+    px(l.x + 1,  l.bottom, 2, l.top - l.bottom, '#c08030');  // mid
+    px(l.x + 16, l.bottom, 4, l.top - l.bottom, '#8a4f1c');
+    px(l.x + 18, l.bottom, 2, l.top - l.bottom, '#c08030');
     // rungs
     for (let r = 0; r <= rungs; r++) {
-      const y = l.bottom + r * 16;
-      px(l.x + 2, y, 16, 4, '#a06020');
+      const ry = l.bottom + r * 16;
+      px(l.x + 2, ry, 16, 2, '#6a3a14');                      // dark base
+      px(l.x + 2, ry, 16, 1, '#a06020');                      // highlight
     }
   }
 }
@@ -1573,26 +1759,62 @@ function drawLevelItems() {
   for (const it of levelItems) {
     if (it.taken) continue;
     const yOff = Math.sin(it.bob) * 3;
+    const pulse = 0.6 + Math.sin(it.bob * 2) * 0.3;
     if (it.kind === 'fish') {
       const x = it.x, y = it.y + yOff;
-      px(x - 4, y - 4, 32, 28, 'rgba(255,240,120,.4)');
+      // ─── Pulsing glow halo ───
+      const haloR = 16 + Math.sin(it.bob * 2) * 3;
+      px(x - haloR/2 + 8, y - haloR/2 + 6, haloR, haloR, `rgba(255,240,120,${0.18 * pulse})`);
+      px(x - haloR/3 + 8, y - haloR/3 + 6, haloR*0.66, haloR*0.66, `rgba(255,220,100,${0.25 * pulse})`);
+      // ─── Fish body ───
       px(x + 2, y + 4, 20, 14, '#50b4e6');
-      px(x, y + 6, 6, 10, '#dc8c28');
-      px(x + 14, y + 6, 3, 3, '#fff');
+      px(x + 2, y + 4, 20, 3, '#7ad0f0');                 // top highlight
+      px(x + 2, y + 15, 20, 3, '#3090c4');                 // bottom shadow
+      // tail
+      px(x - 2, y + 4, 6, 8, '#dc8c28');
+      px(x - 4, y + 5, 4, 6, '#dc8c28');
+      px(x - 2, y + 4, 2, 8, '#ffae3d');                  // tail highlight
+      // top fin
+      px(x + 8, y, 5, 5, '#dc8c28');
+      // eye
+      px(x + 14, y + 6, 4, 4, '#fff');
       px(x + 15, y + 7, 2, 2, '#000');
+      px(x + 15, y + 7, 1, 1, '#fff');                     // sparkle
+      // gill
+      px(x + 10, y + 8, 1, 6, '#286eb4');
+      // smile
+      px(x + 12, y + 11, 4, 1, '#000');
     } else if (it.kind === 'banana') {
       const x = it.x, y = it.y + yOff;
-      px(x, y, 16, 8, '#ffd84a');
+      // glow
+      px(x - 4, y - 4, 24, 20, `rgba(255,220,80,${0.22 * pulse})`);
+      // banana body (curved via 2-stop)
+      px(x,     y + 2, 14, 6, '#ffd84a');
+      px(x + 2, y,     10, 8, '#ffe874');                  // upper highlight
+      px(x,     y + 6, 14, 2, '#c0a020');                  // shadow
+      // stem
       px(x + 12, y - 2, 6, 4, '#7a5a10');
-      px(x, y, 4, 4, '#7a5a10');
+      px(x + 13, y - 2, 3, 4, '#5a3a08');                  // stem shadow
+      // tip
+      px(x,     y + 2, 2, 6, '#7a5a10');
     } else if (it.kind === 'yarn') {
       const x = it.x, y = it.y + yOff;
-      px(x - 4, y - 4, 28, 24, 'rgba(255,180,200,.4)');
-      px(x, y, 20, 16, '#ff7ab0');
-      px(x + 6, y + 4, 8, 8, '#ffd0e0');
-      // string trailing
+      // glow
+      px(x - 6, y - 4, 32, 24, `rgba(255,160,200,${0.22 * pulse})`);
+      // ball
+      px(x,     y,     20, 16, '#ff7ab0');
+      px(x,     y,     20, 3,  '#ff9ec4');                  // top highlight
+      px(x,     y + 13, 20, 3, '#d65a8a');                  // bottom shadow
+      // swirl lines (yarn texture)
+      px(x + 3, y + 4,  10, 1, '#fff0f6');
+      px(x + 6, y + 8,  8,  1, '#d65a8a');
+      px(x + 4, y + 11, 9,  1, '#fff0f6');
+      // center accent
+      px(x + 6, y + 4,  8,  8, '#ffd0e0');
+      // trailing string
       px(x - 2, y + 14, 2, 2, '#ff7ab0');
-      px(x - 4, y + 16, 2, 2, '#ff7ab0');
+      px(x - 5, y + 16, 3, 2, '#ff7ab0');
+      px(x - 8, y + 18, 2, 2, '#ff7ab0');
     }
   }
 }
@@ -1613,51 +1835,107 @@ function drawBarrels() {
 
 function drawGoal() {
   if (!goal) return;
-  // a colorful ribbon/pennant on a pole (DK-style Pauline rescue cue)
+  // a colorful waving pennant on a pole (DK-style Pauline rescue cue)
   const gx = goal.x, gy = goal.y;
-  // pole
-  px(gx + 28, gy, 4, goal.h, '#6b4a20');
-  // flag
-  px(gx + 4, gy, 26, 14, '#ff4d6d');
-  px(gx + 4, gy + 14, 26, 4, '#ffd86b');
-  px(gx + 4, gy + 18, 26, 2, '#7ab8ff');
-  // text "GOAL"
+  // base (stand)
+  px(gx + 24, gy + goal.h, 12, 4, '#5a3a10');
+  px(gx + 26, gy + goal.h, 8, 2, '#3a2410');
+  // pole (with highlight)
+  px(gx + 28, gy, 4, goal.h, '#8a6028');
+  px(gx + 28, gy, 1, goal.h, '#aa7838');                  // left highlight
+  px(gx + 31, gy, 1, goal.h, '#5a3a18');                  // right shadow
+  // flag pole top (gold ball)
+  px(gx + 27, gy - 4, 6, 6, '#ffd86b');
+  px(gx + 28, gy - 3, 4, 4, '#ffe874');
+  // ─── Waving pennant (4 colored stripes, with wave) ───
+  const t = performance.now() / 400;
+  for (let i = 0; i < 26; i++) {
+    const wy = Math.sin(t + i * 0.3) * 1.5;
+    if (i < 9)       px(gx + 4 + i, gy + wy,     1, 14, '#ff4d6d');
+    else if (i < 14) px(gx + 4 + i, gy + 14 + wy, 1, 4,  '#ffd86b');
+    else             px(gx + 4 + i, gy + 18 + wy, 1, 2,  '#7ab8ff');
+  }
+  // "GOAL" text on the red part
   px(gx + 8,  gy + 4,  2, 6, '#fff');
   px(gx + 12, gy + 4,  2, 6, '#fff');
   px(gx + 16, gy + 4,  2, 6, '#fff');
   px(gx + 20, gy + 4,  2, 6, '#fff');
-  // sparkles
-  const t = performance.now() / 200;
-  for (let i = 0; i < 3; i++) {
-    const a = (t + i * 2.1) % (Math.PI * 2);
-    const sx = gx + 18 + Math.cos(a) * 18;
-    const sy = gy + 10 + Math.sin(a) * 8;
-    px(sx, sy, 2, 2, '#fff5b4');
+  // ─── Sparkles around the goal ───
+  for (let i = 0; i < 5; i++) {
+    const a = (t * 2 + i * 1.3) % (Math.PI * 2);
+    const sx = gx + 18 + Math.cos(a) * 22;
+    const sy = gy + 10 + Math.sin(a) * 12;
+    const sz = i % 2 ? 3 : 2;
+    px(sx, sy, sz, sz, '#fff5b4');
+    // small star arms
+    if (i % 2 === 0) {
+      px(sx - 3, sy + 1, 2, 1, '#fff5b4');
+      px(sx + sz + 1, sy + 1, 2, 1, '#fff5b4');
+      px(sx + 1, sy - 3, 1, 2, '#fff5b4');
+      px(sx + 1, sy + sz + 1, 1, 2, '#fff5b4');
+    }
   }
 }
 
 /* DK-style sky (no scrolling; deep purple-ish at the top) */
 function drawPlatformBackground() {
+  const t = performance.now() / 1000;
+  // ─── Sky gradient (deeper top, warmer bottom for sunset feel) ───
   const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  g.addColorStop(0, '#0a1a3a');
-  g.addColorStop(0.4, '#1a3a6a');
-  g.addColorStop(1, '#4a7ab0');
+  g.addColorStop(0,    '#0a0a2a');
+  g.addColorStop(0.3,  '#1a1a4a');
+  g.addColorStop(0.7,  '#3a3a7a');
+  g.addColorStop(1,    '#6a5a9a');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, GROUND_Y);
-  // distant city silhouette (Donkey Kong NYC skyline vibe)
-  ctx.fillStyle = '#0a1a3a';
-  for (let x = 0; x < W; x += 30) {
-    const h = 30 + Math.sin(x * 0.05) * 15 + Math.sin(x * 0.13) * 10;
-    ctx.fillRect(x, GROUND_Y - 60 - h, 22, h);
-  }
-  // a moon
-  px(W - 100, 60, 40, 40, '#fff5d0');
-  px(W - 92, 68, 24, 24, '#1a3a6a');
-  // stars
-  for (let i = 0; i < 30; i++) {
+  // ─── Stars (parallax: gently twinkling) ───
+  for (let i = 0; i < 50; i++) {
     const sx = (i * 73) % W;
-    const sy = (i * 37) % 100 + 20;
-    const tw = (performance.now() / 500 + i) % 2 < 1;
-    px(sx, sy, 2, 2, tw ? '#fff' : 'rgba(255,255,255,.4)');
+    const sy = (i * 37) % 200 + 10;
+    const tw = (t * 1.5 + i * 0.7) % 3;
+    const sz = 1 + (i % 3 === 0 ? 1 : 0);
+    if (tw < 2.5) px(sx, sy, sz, sz, '#fff');
+    else          px(sx, sy, sz, sz, 'rgba(255,255,255,.4)');
+  }
+  // ─── Big moon (with craters) ───
+  const moonX = W - 110, moonY = 70;
+  // moon glow
+  px(moonX - 50, moonY - 50, 100, 100, 'rgba(255,245,200,.08)');
+  px(moonX - 35, moonY - 35, 70, 70, 'rgba(255,245,200,.12)');
+  // moon body
+  px(moonX - 30, moonY - 30, 60, 60, '#fff5d0');
+  px(moonX - 30, moonY - 30, 60, 4, '#ffffff');
+  // craters
+  px(moonX - 18, moonY - 12, 6, 5, '#e6d4a4');
+  px(moonX - 4,  moonY - 18, 4, 4, '#e6d4a4');
+  px(moonX + 8,  moonY - 4,  3, 3, '#e6d4a4');
+  px(moonX - 10, moonY + 8,  4, 3, '#e6d4a4');
+  // moon shadow (crescent effect on left)
+  px(moonX - 30, moonY - 30, 16, 60, 'rgba(20,20,40,.4)');
+  // ─── Far city (back layer — slow parallax) ───
+  ctx.fillStyle = '#15153a';
+  for (let x = 0; x < W + 60; x += 28) {
+    const h = 40 + Math.sin(x * 0.05) * 18 + Math.sin(x * 0.13) * 12;
+    ctx.fillRect(x - (t * 6) % 28, GROUND_Y - 100 - h, 22, h);
+  }
+  // ─── Mid city (closer) ───
+  ctx.fillStyle = '#0a0a26';
+  for (let x = 0; x < W + 60; x += 36) {
+    const h = 55 + Math.sin(x * 0.07) * 22 + Math.sin(x * 0.19) * 14;
+    ctx.fillRect(x - (t * 12) % 36, GROUND_Y - 80 - h, 28, h);
+    // windows
+    for (let wy = 0; wy < h - 6; wy += 6) {
+      for (let wx = 4; wx < 22; wx += 6) {
+        if (((x + wy + wx) | 0) % 3 === 0) {
+          px(x - ((t * 12) % 36) + wx, GROUND_Y - 80 - h + wy + 2, 2, 2, '#ffd86b');
+        }
+      }
+    }
+  }
+  // ─── Near silhouette (foreground towers) ───
+  ctx.fillStyle = '#000018';
+  for (let x = 0; x < W + 60; x += 50) {
+    const h = 30 + Math.sin(x * 0.09) * 15;
+    ctx.fillRect(x - (t * 20) % 50, GROUND_Y - 50 - h, 40, h);
   }
 }
 
