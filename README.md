@@ -26,11 +26,15 @@ start index.html       # Windows
 ```
 
 ### Hosted (Render)
-This repo is configured for Render as a **Static Site** (free tier). See `render.yaml` for the service spec.
+This repo is configured for Render as a **Node Web Service** (per the standing rule that all services are web services, not static sites). See `render.yaml` for the service spec. `serve.js` is a tiny static-file server (8 lines of logic) that wraps the single `index.html`.
 
 ## 🧱 What's Inside
 - **`index.html`** — the entire game (HTML + CSS + JS, one file)
-- **`render.yaml`** — Render Static Site declaration (auto-build & publish `index.html`)
+- **`serve.js`** — tiny Node static server (Render web service entry point)
+- **`package.json`** — Node project manifest
+- **`render.yaml`** — Render Web Service spec (documentation; deploy triggered manually from dashboard)
+- **`smoke.js`** — Playwright headless smoke test
+- **`bootstrap.sh`** — one-shot GitHub create+push script
 
 That's it. The whole game is one HTML file you can read top-to-bottom.
 

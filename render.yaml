@@ -1,21 +1,28 @@
-# Render Static Site declaration for Annabelle's Cat Runner
-# This file is consumed by Render when the Static Site is created
-# (it is NOT used for "Blueprint" infra-as-code deploys per the standing
-#  rule — services are managed manually from the Render dashboard).
+# Render service declaration for Annabelle's Cat Runner
+# Reference: https://render.com/docs/web-services
 #
-# Reference: https://render.com/docs/static-sites
+# IMPORTANT (per standing order): all services on this team are WEB SERVICES,
+# not Static Sites and not Blueprints. This file is kept for documentation
+# only — service is created manually from Render's side (see bootstrap.sh).
+#
+# Service is a Node web service that serves the static game via serve.js.
+# Required Render dashboard settings (trigger manually from your side):
+#   - Type:        Web Service
+#   - Runtime:     Node
+#   - Branch:      2026-07-25__methodical-notes__initial-cat-runner-game
+#   - Build Cmd:   npm install --no-audit --no-fund
+#   - Start Cmd:   node serve.js
+#   - Plan:        Starter (free) is fine
+#   - Health:      / (HTTP 200)
 services:
-  - type: static_site
+  - type: web
     name: annabelle-catgame
-    runtime: static
+    runtime: node
     autoDeploy: false          # deploys are triggered manually from Render's side
-    buildCommand: ""           # no build step — index.html ships as-is
-    staticPublishPath: .
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: public, max-age=300
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: node serve.js
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

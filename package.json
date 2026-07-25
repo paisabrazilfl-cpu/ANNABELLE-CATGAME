@@ -1,0 +1,14 @@
+{
+  "name": "annabelle-catgame",
+  "version": "1.0.0",
+  "description": "🐱 A fun 2D endless-runner starring an orange tabby with big green eyes. Single-file HTML5, kid-readable code.",
+  "private": true,
+  "main": "serve.js",
+  "scripts": {
+    "start": "node serve.js",
+    "smoke": "node smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
