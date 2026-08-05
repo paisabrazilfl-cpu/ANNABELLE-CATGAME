@@ -1,7 +1,13 @@
 .DS_Store
+Thumbs.db
 node_modules/
 *.log
 .vscode/
 .idea/
-.DS_Store
-Thumbs.db
+
+# Test artifacts — smoke tests write screenshots into the project root
+# (one PNG per test run). They are not source files.
+# Prefix-match all `screenshot-*.png` files (and the old `screenshot.png`).
+screenshot-*.png
+screenshot.png
+fresh-mobile.png

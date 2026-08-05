@@ -107,9 +107,13 @@ async function waitForServer(port, timeout = 5000) {
   // Screenshot mid-level
   await page.screenshot({ path: '/workspace/annabelle-catgame/screenshot-platform-mid.png' });
 
-  // Test 4: reach the goal
+  // Test 4: reach the goal. Set fish >= goal AND place the cat on the
+  // goal in a SINGLE evaluate so there's no race window where the cat
+  // overlaps the goal but fish < goal (which would silently fail the
+  // level-complete check and let the cat fall past the goal before the
+  // test gets a chance to update the fish count).
   await page.evaluate(() => {
-    // place the cat right at the goal
+    window.__world.levelFish = window.__world.levelGoal;
     const goal = window.__goal ? window.__goal() : null;
     if (goal) {
       window.__cat.x = goal.x;
@@ -118,11 +122,7 @@ async function waitForServer(port, timeout = 5000) {
       window.__cat.onGround = false;
     }
   });
-  // Force-complete by setting fish >= goal
-  await page.evaluate(() => {
-    window.__world.levelFish = window.__world.levelGoal;
-  });
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(200);
   const afterGoal = await page.evaluate(() => {
     const goal = window.__goal ? window.__goal() : null;
     return {
@@ -135,8 +135,8 @@ async function waitForServer(port, timeout = 5000) {
   console.log('platform: after reaching goal:', JSON.stringify(afterGoal));
   if (!afterGoal.levelComplete) errs.push('level did not complete on goal reach');
 
-  // Wait for level transition
-  await page.waitForTimeout(2000);
+  // Wait for level transition (1.6s timer + a safety margin)
+  await page.waitForTimeout(2200);
   const newLevel = await page.evaluate(() => window.__world.level);
   console.log('platform: new level after wait:', newLevel);
   if (newLevel !== 2) errs.push('did not advance to level 2 (got ' + newLevel + ')');

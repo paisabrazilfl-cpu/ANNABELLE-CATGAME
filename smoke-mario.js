@@ -37,7 +37,7 @@ async function waitForServer(port, timeout = 5000) {
   await page.waitForFunction(() => !!window.__catRunner);
 
   // ===== Test 1: platform mode has FEWER dogs (Mario-style) =====
-  await page.evaluate(() => { if (window.__catRunner.start) window.__catRunner.start('platform'); });
+  await page.evaluate(() => { window.__catRunner.startWithMode('platform'); });
   await page.waitForTimeout(500);
   const platformObstacles = await page.evaluate(() => window.__obstacles.length);
   console.log('platform mode obstacles:', platformObstacles);
@@ -46,7 +46,7 @@ async function waitForServer(port, timeout = 5000) {
   // ===== Test 2: endless mode has DOUBLE JUMP =====
   await page.evaluate(() => window.__catRunner.restart());
   await page.waitForTimeout(300);
-  await page.evaluate(() => { if (window.__catRunner.start) window.__catRunner.start('endless'); });
+  await page.evaluate(() => { window.__catRunner.startWithMode('endless'); });
   await page.waitForTimeout(800);
   // put cat WAY up in midair, give jumpsLeft=1, AND disable coyote time
   await page.evaluate(() => {
@@ -77,13 +77,20 @@ async function waitForServer(port, timeout = 5000) {
   // mode test just verifies that the cat's midair state is reachable.)
   await page.evaluate(() => window.__catRunner.restart());
   await page.waitForTimeout(300);
-  await page.evaluate(() => { if (window.__catRunner.start) window.__catRunner.start('platform'); });
+  await page.evaluate(() => { window.__catRunner.startWithMode('platform'); });
   await page.waitForTimeout(500);
   // we don't try to force a midair jump — just verify the platform mode
   // is reachable and the obstacles are limited (Test 1 already covered that)
   console.log('platform mode reachable, no errors');
 
   // ===== Test 4: stomp gives feedback =====
+  // Switch back to ENDLESS mode (Test 3 left us in platform mode, where
+  // the stomping logic lives in updatePlatform and only fires when
+  // stompable dogs are present in the level data).
+  await page.evaluate(() => window.__catRunner.startWithMode('endless'));
+  await page.waitForTimeout(300);
+  // Disable the spawner so the injected rock is the only obstacle on screen
+  await page.evaluate(() => { window.__world.spawnTimer = 999; });
   await page.evaluate(() => {
     window.__obstacles.length = 0;
     window.__obstacles.push({ kind:'dog', x: 200, y: 400, w: 50, h: 48, duckable:false });

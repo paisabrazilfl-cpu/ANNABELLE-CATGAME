@@ -1,14 +1,22 @@
 {
   "name": "annabelle-catgame",
-  "version": "1.0.0",
-  "description": "🐱 A fun 2D endless-runner starring an orange tabby with big green eyes. Single-file HTML5, kid-readable code.",
+  "version": "1.1.0",
+  "description": "🐱 A fun 2D game starring an orange tabby with big green eyes. Single-file HTML5 with two modes (endless run + SNES-style platform). Kid-readable code.",
   "private": true,
   "main": "serve.js",
   "scripts": {
     "start": "node serve.js",
-    "smoke": "node smoke.js"
+    "play": "./PLAY.sh",
+    "smoke": "node smoke-mechanics.js && node smoke-platform.js && node smoke-mobile-fixed.js && node smoke-fall-physics.js && node smoke-gravity-bg.js && node smoke-mario.js",
+    "smoke:all": "for f in smoke-mechanics.js smoke-platform.js smoke-mobile-fixed.js smoke-fall-physics.js smoke-gravity-bg.js smoke-mario.js; do node \"$f\" || echo \"FAIL: $f\"; done",
+    "smoke:visual": "node smoke-snes-jungle.js",
+    "smoke:live": "node smoke-live-snes.js",
+    "smoke:http": "node smoke-http.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
   }
 }

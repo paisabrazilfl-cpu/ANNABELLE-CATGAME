@@ -3,10 +3,12 @@
 #
 # IMPORTANT (per standing order): all services on this team are WEB SERVICES,
 # not Static Sites and not Blueprints. This file is kept for documentation
-# only — service is created manually from Render's side (see bootstrap.sh).
+# only — the service is created manually from Render's dashboard (see
+# bootstrap.sh for the link and the manual steps below).
 #
-# Service is a Node web service that serves the static game via serve.js.
-# Required Render dashboard settings (trigger manually from your side):
+# Service is a Node web service that wraps the single index.html via serve.js.
+# Required Render dashboard settings (set on the Render side when creating
+# the Web Service):
 #   - Type:        Web Service
 #   - Runtime:     Node
 #   - Branch:      2026-07-25__methodical-notes__initial-cat-runner-game
@@ -14,15 +16,7 @@
 #   - Start Cmd:   node serve.js
 #   - Plan:        Starter (free) is fine
 #   - Health:      / (HTTP 200)
-services:
-  - type: web
-    name: annabelle-catgame
-    runtime: node
-    autoDeploy: false          # deploys are triggered manually from Render's side
-    buildCommand: npm install --no-audit --no-fund
-    startCommand: node serve.js
-    plan: starter
-    healthCheckPath: /
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
+#   - Env Var:     NODE_VERSION=20
+#
+# Auto-deploy is OFF — the operator (Luis) triggers deploys manually from
+# the Render dashboard after each commit lands on the tracked branch.

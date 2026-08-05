@@ -63,17 +63,31 @@
         box-shadow: none;
         background: #87CEEB;
         flex: 0 0 auto;
+        /* On mobile the overlay is a sibling of .touch (below the stage)
+           so the start card has room to render. We let it overflow the
+           stage vertically to cover the full screen. */
+        overflow: visible;
       }
       .credits { display: none; }
       .title { display: none; }
       .hud { top: 8px; left: 8px; right: 8px; gap: 6px; }
       .hud .badge { font-size: 11px; padding: 3px 8px; }
       .hud .panel { gap: 6px; flex-wrap: wrap; }
-    }
-    /* Hide the on-canvas title on mobile (the hint is in the touch bar instead) */
-    @media (max-width: 900px) {
-      .title { display: none; }
-      .credits { display: none; }
+      /* On mobile the overlay needs to cover the FULL screen including
+         the touch bar, so we make it position:fixed instead of absolute. */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+      }
+      .card {
+        max-width: 92vw;
+        padding: 18px 22px;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      .card h1 { font-size: clamp(20px, 5.5vw, 28px); }
+      .card p  { font-size: clamp(12px, 3vw, 15px); }
     }
     canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
     .hud {
@@ -239,41 +253,20 @@
       </div>
       <div class="title" id="hintBar">SPACE / ↑ = jump · ↓ = duck · A · D = run · jump on enemies to STOMP! · R = restart · ESC = pause</div>
       <script>
-        // Run after DOM is ready (these scripts live above the elements they touch)
+        // Touch-device hint + start-button text swap. Runs after DOM ready.
+        // Listens for overlay mutations so the swap also fires after the
+        // game-over card is replaced.
         document.addEventListener('DOMContentLoaded', () => {
           const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-          if (isTouch) {
-            const h = document.getElementById('hintBar');
-            if (h) h.textContent = 'Tap buttons to play — ◀ ▶ run, JUMP, DUCK, II pause';
-
-            const overlay = document.getElementById('overlay');
-            const swap = () => {
-              const allP = overlay ? Array.from(overlay.querySelectorAll('p')) : [];
-              const target = allP.find(p => /click play or press space/i.test(p.textContent));
-              if (target) target.textContent = 'Tap PLAY or press SPACE to start.';
-              const startBtn = document.getElementById('startBtn');
-              if (startBtn) startBtn.textContent = '▶ TAP TO PLAY';
-            };
-            swap();
-            if (overlay) new MutationObserver(swap).observe(overlay, { childList: true, subtree: true });
-          }
+          if (!isTouch) return;
+          const h = document.getElementById('hintBar');
+          if (h) h.textContent = 'Tap buttons to play — ◀ ▶ run, JUMP, DUCK, II pause';
+          // Rename ONLY the endless start button on touch devices — leave
+          // the platform button as-is so the mode choice is still clear.
+          const startBtn = document.getElementById('startBtn');
+          if (startBtn) startBtn.textContent = '▶ TAP TO PLAY';
         });
       </script>
-    </div>
-
-    <!-- On-screen touch controls (mobile / tablets). Sibling of stage, lives below it. -->
-    <div class="touch" id="touchControls">
-      <div class="touch-hint">Tap buttons — ◀ ▶ run, JUMP, DUCK, II pause</div>
-      <div class="pad left">
-        <button class="tbtn" data-key="arrowleft"  data-hold="1" aria-label="Move left">◀</button>
-        <button class="tbtn" data-key="arrowright" data-hold="1" aria-label="Move right">▶</button>
-      </div>
-      <div class="pad right">
-        <button class="tbtn pause" data-key="escape" data-tap="1" aria-label="Pause">II</button>
-        <button class="tbtn duck"  data-key="arrowdown" data-hold="1" aria-label="Duck">DUCK</button>
-        <button class="tbtn jump"  data-key=" "          data-tap="1"  aria-label="Jump">JUMP</button>
-      </div>
-    </div>
       <div class="overlay" id="overlay">
         <div class="card">
           <h1>🐱 Annabelle's Cat Runner</h1>
@@ -302,6 +295,20 @@
           </div>
           <p style="font-size:12px;margin-top:10px">Endless: run forever. Platform: climb ladders, grab all the fish, reach the goal 🏁</p>
         </div>
+      </div>
+    </div>
+
+    <!-- On-screen touch controls (mobile / tablets). Sibling of stage, lives below it. -->
+    <div class="touch" id="touchControls">
+      <div class="touch-hint">Tap buttons — ◀ ▶ run, JUMP, DUCK, II pause</div>
+      <div class="pad left">
+        <button class="tbtn" data-key="arrowleft"  data-hold="1" aria-label="Move left">◀</button>
+        <button class="tbtn" data-key="arrowright" data-hold="1" aria-label="Move right">▶</button>
+      </div>
+      <div class="pad right">
+        <button class="tbtn pause" data-key="escape" data-tap="1" aria-label="Pause">II</button>
+        <button class="tbtn duck"  data-key="arrowdown" data-hold="1" aria-label="Duck">DUCK</button>
+        <button class="tbtn jump"  data-key=" "          data-tap="1"  aria-label="Jump">JUMP</button>
       </div>
     </div>
   </div>
@@ -362,7 +369,7 @@ const world = {
   distance: 0,
   fish: 0,
   stomps: 0,                   // how many enemies the cat squished
-  best: Number(localStorage.getItem('annabelle-cat-best') || 0),
+  best: (() => { const v = parseInt(localStorage.getItem('annabelle-cat-best') || '0', 10); return Number.isFinite(v) && v > 0 ? v : 0; })(),
   shake: 0,
   flash: 0,
   paused: false,
@@ -1168,7 +1175,10 @@ function gameOver() {
   sfx.hit();
   for (let i = 0; i < 50; i++) particles.push(makeParticle(cat.x + 35, cat.y + 35, 'red'));
   const score = scoreVal();
-  if (score > world.best) { world.best = score; localStorage.setItem('annabelle-cat-best', score); }
+  if (score > world.best) {
+    world.best = score;
+    try { localStorage.setItem('annabelle-cat-best', String(score)); } catch (_) { /* private mode etc. */ }
+  }
   setTimeout(() => {
     const o = document.getElementById('overlay');
     o.classList.remove('hidden');
@@ -1503,7 +1513,9 @@ function drawAirStreaks() {
   for (let i = _airStreaks.length - 1; i >= 0; i--) {
     const s = _airStreaks[i];
     s.life -= 0.05;
-    s.y += cat.vy * 0.04;  // streaks move with the cat's fall speed
+    // streaks are stationary in the world; as the cat falls (cat.vy > 0),
+    // the streak appears to rush UP past the cat. So we subtract.
+    s.y -= cat.vy * 0.04;
     if (s.life <= 0) { _airStreaks.splice(i, 1); continue; }
     const a = s.life / s.max;
     px(s.x, s.y, 1, s.len | 0, `rgba(255,255,255,${0.4 * a})`);
@@ -1821,24 +1833,34 @@ function drawCat() {
     p(cat.w + 9,  17 + tw3, 5, 4, '#ffb27a');
   } else {
     // ─── Ducking (low profile, no tail) ─────────────
-    const dy = 46;
-    p(8,  dy - 6, cat.w - 16, cat.h - (cat.h * 0.66) + 4, body);
-    p(4,  dy - 4, cat.w - 8,  16, body);
-    p(4,  dy - 4, cat.w - 8, 2, bodyHi);
-    p(8,  dy - 10, 8, 8, body);
-    p(cat.w - 16, dy - 10, 8, 8, body);
-    p(7,  dy - 7, 4, 4, '#ff82a0');
-    p(cat.w - 15, dy - 7, 4, 4, '#ff82a0');
-    p(cat.w - 18, dy + 1, 6, 4, eyeBg);
-    p(cat.w - 16, dy + 2, 2, 2, dark);
-    p(cat.w - 16, dy + 1, 1, 1, '#fff');                // eye sparkle
+    // NOTE: the ducking drawing y is already shifted down by cat.h * 0.4
+    // (see the y = ... line at the top of drawCat). So we use SMALL relative
+    // y values here, anchored to the cat's now-lower drawing origin.
+    // (Earlier versions used absolute-ish values that pushed the ducking
+    //  body BELOW the cat's bounding box. This is the corrected layout.)
+    p(8,  18, cat.w - 16, 22, body);                    // main body (lower 22px)
+    p(4,  20, cat.w - 8,  18, body);                    // outline body
+    p(4,  20, cat.w - 8, 2, bodyHi);                    // top highlight
+    p(8,   6, 8, 14, body);                             // left ear
+    p(cat.w - 16, 6, 8, 14, body);                      // right ear
+    p(7,   9, 4, 4, '#ff82a0');                         // left inner ear
+    p(cat.w - 15, 9, 4, 4, '#ff82a0');                  // right inner ear
+    // ─── Face: lower, since the body is now squat ───
+    p(cat.w - 22, 14, 8, 5, '#fff');                    // eye white
+    p(cat.w - 22, 15, 7, 4, eyeBg);                     // green iris
+    p(cat.w - 20, 16, 4, 3, dark);                      // pupil
+    p(cat.w - 20, 15, 1, 1, '#fff');                    // eye sparkle
+    p(cat.w/2 - 2, 22, 4, 2, nose);                     // nose
+    p(cat.w/2 - 3, 26, 2, 1, dark);                     // mouth
+    p(cat.w/2 + 1, 26, 2, 1, dark);                     // mouth
   }
 
   // ─── Running dust (when moving fast on ground) ─────────────
   if (cat.onGround && Math.abs(cat.vx) > 250 && (performance.now() % 200) < 60) {
-    const dx = flip ? 12 : cat.w - 16;
+    // dust kicks up BEHIND the cat (opposite of facing direction)
+    const dx = flip ? cat.w - 16 : 12;
     px(x + dx, cat.y + cat.h - 4, 4, 3, 'rgba(220,220,220,.6)');
-    px(x + dx + (flip ? -6 : 6), cat.y + cat.h - 6, 3, 2, 'rgba(220,220,220,.4)');
+    px(x + dx + (flip ? 6 : -6), cat.y + cat.h - 6, 3, 2, 'rgba(220,220,220,.4)');
   }
 }
 
@@ -2506,11 +2528,15 @@ function draw() {
     ctx.font = 'bold 28px -apple-system, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('LEVEL ' + world.level, cx, cy - 4);
-    // subtitle (level hint)
-    const subs = ['', 'Easy start — find the fish!', 'Dogs patrol — jump on them!', 'Barrels roll — dodge!'];
+    // subtitle (level hint, 0-indexed by level-1)
+    const subs = [
+      'Easy start — find the fish!',
+      'Dogs patrol — jump on them!',
+      'Barrels roll — dodge!',
+    ];
     ctx.font = '14px -apple-system, system-ui, sans-serif';
     ctx.fillStyle = `rgba(255,220,120,${fadeOut})`;
-    ctx.fillText(subs[world.level] || '', cx, cy + 22);
+    ctx.fillText(subs[world.level - 1] || '', cx, cy + 22);
     ctx.textAlign = 'left';
   }
   if (world.paused && world.started && !world.over) {
@@ -2533,9 +2559,11 @@ requestAnimationFrame(update);
 /* expose a tiny API for Playwright e2e */
 window.__catRunner = {
   start: startGame,
+  startWithMode,                                   // honors the 'endless' | 'platform' arg
   restart,
-  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, stomps: world.stomps, best: world.best }),
+  state: () => ({ started: world.started, over: world.over, score: scoreVal(), fish: world.fish, stomps: world.stomps, best: world.best, mode: world.mode, level: world.level, lives: world.lives }),
   jump: catJump,
+  loseLife,                                        // exposed so smoke tests can force a death
 };
 window.__cat = cat;        // read-only debug hook for tests
 window.__world = world;
