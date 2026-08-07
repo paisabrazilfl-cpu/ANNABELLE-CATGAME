@@ -9,23 +9,114 @@
   <title>🐱 Annabelle's Cat Runner</title>
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>🐱</text></svg>" />
   <style>
+    /* =========================================================================
+       🐱 Annabelle's Cat Runner — UI HARMONIZATION (2026-08-07)
+       One design system, not 200 lines of magic numbers. Every color, radius,
+       shadow, spacing value, and motion timing lives in a token. Components
+       reference tokens. Adding a new component = copying an existing one.
+       ========================================================================= */
+
     :root {
-      --sky-1: #6ebef0;
-      --sky-2: #b4e6ff;
-      --grass: #6ec85a;
-      --grass-dark: #50a046;
-      --ink: #1f2937;
+      color-scheme: light;
+      /* ── Surfaces (sky → cream card → brown UI) ─────────────────────── */
+      --c-bg-1:        #6ebef0;          /* sky top (desktop body) */
+      --c-bg-2:        #b4e6ff;          /* sky mid */
+      --c-bg-3:        #d6f1ff;          /* sky bottom (desktop body) */
+      --c-bg-stage:    #87CEEB;          /* canvas backdrop (default) */
+      --c-bg-card-1:   #fff7e6;          /* cream card top */
+      --c-bg-card-2:   #ffe2b0;          /* cream card bottom */
+      --c-text:        #1f2937;          /* default ink */
+      --c-text-on-card:#4a2a0a;          /* ink on cream */
+      --c-text-muted:  rgba(31,41,55,.75);
+      --c-text-on-dark:rgba(255,255,255,.92);
+      --c-text-on-dark-muted:rgba(255,255,255,.6);
+
+      /* ── Earthy UI system (key, card, btn) ─────────────────────────── */
+      --c-brown:        #5b3a14;         /* primary UI border / dark accent */
+      --c-brown-deep:   #3a2410;         /* darker brown (hover/inset) */
+      --c-brown-soft:   rgba(91,58,20,.35);
+
+      /* ── Brand (primary action — orange) ───────────────────────────── */
+      --c-brand:        #ff8a3d;
+      --c-brand-deep:   #c95c1a;
+
+      /* ── Accent (secondary action — purple) ─────────────────────────── */
+      --c-accent:       #6a4fc9;
+      --c-accent-deep:  #4a2fa0;
+
+      /* ── Touch bar + touch buttons ─────────────────────────────────── */
+      --c-touch-1:      rgba(30,40,55,.95);
+      --c-touch-2:      rgba(20,28,40,1);
+      --c-touch-shadow: rgba(0,0,0,.4);
+      --c-touch-surface:rgba(255,255,255,.92);
+      --c-touch-pressed:rgba(255,210,140,.95);
+      --c-touch-jump-1: #ffd86b;
+      --c-touch-jump-2: #ff9d2e;
+      --c-touch-duck-1: #b6dcff;
+      --c-touch-duck-2: #6ba8e8;
+      --c-touch-duck-ink:#14304a;
+      --c-pause-bg:     rgba(255,255,255,.15);
+      --c-pause-border: rgba(255,255,255,.4);
+
+      /* ── HUD badges (glass) ────────────────────────────────────────── */
+      --c-badge-bg:     rgba(255,255,255,.6);
+      --c-badge-border: rgba(0,0,0,.1);
+      --c-overlay-bg:   rgba(0,0,0,.55);
+      --c-overlay-glow: rgba(255,255,255,.4);
+
+      /* ── Spacing scale (4px grid) ───────────────────────────────────── */
+      --s-1: 4px;
+      --s-2: 8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 20px;
+      --s-6: 28px;
+      --s-7: 36px;
+
+      /* ── Radius scale ──────────────────────────────────────────────── */
+      --r-sm:  8px;        /* keys, small chips */
+      --r-md:  12px;       /* (reserved) */
+      --r-lg:  18px;       /* card, touch buttons */
+      --r-pill:999px;      /* badges, action buttons */
+
+      /* ── Press affordance ───────────────────────────────────────────── */
+      --press-y:      2px;     /* desktop buttons + keys */
+      --press-y-touch:3px;     /* touch buttons */
+      --press-border-rest:  4px;
+      --press-border-down: 2px;
+
+      /* ── Elevation (3 tiers) ────────────────────────────────────────── */
+      --shadow-1: 0 1px 2px rgba(0,0,0,.12);
+      --shadow-2: 0 8px 24px rgba(0,0,0,.18);
+      --shadow-3: 0 20px 60px rgba(0,0,0,.28);
+      --shadow-touch-up:  0 4px 0 var(--c-brown-soft);
+      --shadow-touch-down:0 3px 0 var(--c-touch-shadow);
+      --shadow-card:  0 12px 30px rgba(0,0,0,.35);
+      --shadow-stage: var(--shadow-3), 0 0 0 1px var(--c-overlay-glow) inset;
+      --shadow-touch-bar: 0 -8px 24px var(--c-touch-shadow);
+
+      /* ── Focus ring ─────────────────────────────────────────────────── */
+      --focus-ring: 0 0 0 3px var(--c-bg-1);
+
+      /* ── Motion ─────────────────────────────────────────────────────── */
+      --ease:   cubic-bezier(.2, .8, .2, 1);
+      --t-fast: 120ms;
+      --t-med:  200ms;
+      --t-slow: 280ms;
     }
+
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0; height: 100%;
-      background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 60%, #d6f1ff 100%);
+      background: linear-gradient(180deg, var(--c-bg-1) 0%, var(--c-bg-2) 60%, var(--c-bg-3) 100%);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      color: var(--ink);
+      color: var(--c-text);
       overflow: hidden;
       -webkit-user-select: none; user-select: none;
       touch-action: manipulation;
     }
+
+    /* ── Stage + wrap ──────────────────────────────────────────────── */
     .wrap {
       position: fixed; inset: 0;
       display: grid; place-items: center;
@@ -36,17 +127,204 @@
       aspect-ratio: 900 / 500;
       max-height: 100vh;
       max-width: 100vw;
-      box-shadow: 0 20px 60px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.4) inset;
-      border-radius: 16px;
+      box-shadow: var(--shadow-stage);
+      border-radius: var(--r-lg);
       overflow: hidden;
-      background: #87CEEB;
+      background: var(--c-bg-stage);
       touch-action: none;
     }
-    /* On portrait / mobile: the game area is exactly 9:5 at the top of the
-       screen. The touch bar is a fixed 110px bar at the bottom. The rest
-       is dark gradient. The world never stretches. */
-    @media (max-width: 900px) {
-      html, body { background: linear-gradient(180deg, #87CEEB 0%, #87CEEB 60%, #2a3a4a 100%); }
+
+    /* ── HUD ───────────────────────────────────────────────────────── */
+    .hud {
+      position: absolute; top: var(--s-3); left: var(--s-3); right: var(--s-3);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      pointer-events: none;
+      font-weight: 800;
+      text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+      letter-spacing: .5px;
+    }
+    .hud .panel { display: flex; gap: var(--s-3); flex-wrap: wrap; }
+    .badge {
+      background: var(--c-badge-bg);
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+      border: 2px solid var(--c-badge-border);
+      padding: var(--s-1) var(--s-3);
+      border-radius: var(--r-pill);
+      font-size: clamp(12px, 2.2vw, 16px);
+      font-weight: 800;
+    }
+
+    /* ── Title (in-canvas hint, hidden on mobile) ──────────────────── */
+    .title {
+      position: absolute; bottom: var(--s-3); left: 0; right: 0; text-align: center;
+      font-size: clamp(12px, 1.8vw, 14px);
+      color: var(--c-text-muted);
+      pointer-events: none;
+    }
+    .credits {
+      position: absolute; top: var(--s-3); left: 50%; transform: translateX(-50%);
+      font-weight: 900; font-size: clamp(14px, 2.4vw, 18px);
+      color: #fff; text-shadow: 3px 3px 0 var(--c-brown), -1px -1px 0 var(--c-brown);
+      letter-spacing: 1px;
+      pointer-events: none;
+      white-space: nowrap;          /* never wrap onto a second line */
+      text-wrap: balance;
+      z-index: 2;
+    }
+
+    /* ── Overlay (start card + game over) ──────────────────────────── */
+    .overlay {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: var(--c-overlay-bg);
+      color: var(--c-text-on-dark);
+      text-align: center;
+      -webkit-backdrop-filter: blur(2px);
+      backdrop-filter: blur(2px);
+      transition: opacity var(--t-med) var(--ease);
+    }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .card {
+      background: linear-gradient(160deg, var(--c-bg-card-1), var(--c-bg-card-2));
+      color: var(--c-text-on-card);
+      padding: var(--s-6) var(--s-7);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-card);
+      max-width: 90%;
+      border: 4px solid var(--c-brown);
+    }
+    .card :where(h1) {
+      margin: 0 0 var(--s-1);
+      font-size: clamp(22px, 4.2vw, 36px);
+      text-wrap: balance;
+    }
+    .card :where(p) {
+      margin: var(--s-1) 0;
+      font-size: clamp(13px, 2.2vw, 16px);
+      text-wrap: pretty;
+    }
+
+    /* ── Keys (decorative key caps) ────────────────────────────────── */
+    .keys {
+      display: flex; gap: var(--s-2); justify-content: center; flex-wrap: wrap;
+      margin: var(--s-3) 0;
+    }
+    .key {
+      font: inherit;
+      background: #fff;
+      border: 2px solid var(--c-brown);
+      border-bottom-width: var(--press-border-rest);
+      padding: var(--s-1) var(--s-2);
+      border-radius: var(--r-sm);
+      font-weight: 800; font-size: 13px;
+      min-width: 38px;
+      transition: transform var(--t-fast) var(--ease), border-bottom-width var(--t-fast) var(--ease);
+    }
+    .key:active { transform: translateY(var(--press-y)); border-bottom-width: var(--press-border-down); }
+
+    /* ── Buttons (primary + alt) ───────────────────────────────────── */
+    .btn, .key, .tbtn {
+      font: inherit;
+      cursor: pointer;
+    }
+    .btn {
+      display: inline-block; margin-top: var(--s-3);
+      background: var(--c-brand); color: #fff;
+      border: none;
+      border-bottom: var(--press-border-rest) solid var(--c-brand-deep);
+      padding: var(--s-2) var(--s-5);
+      border-radius: var(--r-pill);
+      font-weight: 800; font-size: 15px;
+      transition: transform var(--t-fast) var(--ease), border-bottom-width var(--t-fast) var(--ease);
+    }
+    .btn:hover { background: var(--c-brand-deep); }
+    .btn:active, .btn.pressed { transform: translateY(var(--press-y)); border-bottom-width: var(--press-border-down); }
+    .btn-alt {
+      background: var(--c-accent);
+      border-bottom-color: var(--c-accent-deep);
+    }
+    .btn-alt:hover { background: var(--c-accent-deep); }
+
+    /* ── Touch controls (mobile) ───────────────────────────────────── */
+    .touch {
+      position: relative;
+      flex: 0 0 110px;
+      pointer-events: none;
+      display: none;
+      z-index: 5;
+      background: linear-gradient(180deg, var(--c-touch-1) 0%, var(--c-touch-2) 100%);
+      box-shadow: var(--shadow-touch-bar);
+      padding: var(--s-1) var(--s-3);
+      padding-block-end: max(var(--s-1), env(safe-area-inset-bottom, 0px));
+      align-items: center; justify-content: space-between;
+    }
+    .touch.show { display: flex; }
+    .pad { display: flex; align-items: center; gap: var(--s-2); pointer-events: none; }
+    .pad.right { gap: var(--s-2); }
+    .tbtn {
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none; user-select: none;
+      touch-action: none;
+      background: var(--c-touch-surface);
+      border: 3px solid var(--c-brown);
+      border-bottom-width: 5px;
+      border-radius: var(--r-lg);
+      color: var(--c-text-on-card);
+      font-weight: 900;
+      font-size: 26px;
+      display: grid; place-items: center;
+      width: 72px;
+      height: 72px;
+      transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease), border-bottom-width var(--t-fast) var(--ease);
+      box-shadow: var(--shadow-touch-up);
+    }
+    .tbtn:active, .tbtn.pressed {
+      transform: translateY(var(--press-y-touch));
+      border-bottom-width: 2px;
+      background: var(--c-touch-pressed);
+    }
+    .tbtn.jump {
+      background: linear-gradient(180deg, var(--c-touch-jump-1), var(--c-touch-jump-2));
+      color: var(--c-text-on-card);
+      font-size: 16px; letter-spacing: 1px;
+    }
+    .tbtn.duck {
+      background: linear-gradient(180deg, var(--c-touch-duck-1), var(--c-touch-duck-2));
+      color: var(--c-touch-duck-ink);
+      font-size: 16px; letter-spacing: 1px;
+    }
+    .tbtn.pause {
+      width: 64px; height: 64px; font-size: 20px;
+      background: var(--c-pause-bg); color: var(--c-text-on-dark);
+      border-color: var(--c-pause-border);
+      box-shadow: var(--shadow-touch-down);
+    }
+    .touch-hint {
+      position: absolute; top: var(--s-1); left: 0; right: 0; text-align: center;
+      color: var(--c-text-on-dark-muted);
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .5px;
+      pointer-events: none;
+    }
+
+    /* ── Focus-visible (keyboard-only) ─────────────────────────────── */
+    :where(.btn, .tbtn, .key, a):focus-visible {
+      outline: 3px solid var(--c-brand);
+      outline-offset: 3px;
+    }
+
+    /* ── Canvas: no change, just match token-driven shadow if needed ── */
+    canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+
+    /* ═════════════════════════════════════════════════════════════════
+       RESPONSIVE — one breakpoint + one capability query
+       Breakpoint: 720px (was 900px; 720 matches "phone" more honestly).
+       Touch bar shows if (small) OR (coarse pointer + no hover).
+       ═════════════════════════════════════════════════════════════════ */
+    @media (max-width: 720px) {
+      html, body { background: linear-gradient(180deg, var(--c-bg-stage) 0%, var(--c-bg-stage) 60%, #2a3a4a 100%); }
       .wrap {
         display: flex; flex-direction: column;
         position: relative;
@@ -54,185 +332,54 @@
         overflow: hidden;
       }
       .stage {
-        position: relative;
         width: 100vw;
-        height: auto;
-        aspect-ratio: 900 / 500;
         max-width: 100vw;
+        aspect-ratio: 900 / 500;
         border-radius: 0;
         box-shadow: none;
-        background: #87CEEB;
+        background: var(--c-bg-stage);
         flex: 0 0 auto;
-        /* On mobile the overlay is a sibling of .touch (below the stage)
-           so the start card has room to render. We let it overflow the
-           stage vertically to cover the full screen. */
-        overflow: visible;
+        overflow: visible;            /* overlay card needs to extend past the canvas */
       }
-      .credits { display: none; }
-      .title { display: none; }
-      .hud { top: 8px; left: 8px; right: 8px; gap: 6px; }
-      .hud .badge { font-size: 11px; padding: 3px 8px; }
-      .hud .panel { gap: 6px; flex-wrap: wrap; }
-      /* On mobile the overlay needs to cover the FULL screen including
-         the touch bar, so we make it position:fixed instead of absolute. */
-      .overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 50;
-      }
+      .credits, .title { display: none; }
+      .hud { top: var(--s-2); left: var(--s-2); right: var(--s-2); gap: var(--s-1); }
+      .hud .panel { gap: var(--s-1); flex-wrap: wrap; }
+      .badge { font-size: 11px; padding: 3px var(--s-2); }
+      /* Overlay covers the FULL viewport (incl. touch bar) on small screens */
+      .overlay { position: fixed; inset: 0; z-index: 50; }
       .card {
         max-width: 92vw;
-        padding: 18px 22px;
         max-height: 80vh;
         overflow-y: auto;
+        padding: var(--s-5) var(--s-6);
+        border-width: 3px;
       }
-      .card h1 { font-size: clamp(20px, 5.5vw, 28px); }
-      .card p  { font-size: clamp(12px, 3vw, 15px); }
     }
-    canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-    .hud {
-      position: absolute; top: 12px; left: 14px; right: 14px;
-      display: flex; justify-content: space-between; align-items: flex-start;
-      pointer-events: none;
-      font-weight: 800;
-      text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
-      letter-spacing: .5px;
-    }
-    .hud .panel { display: flex; gap: 14px; flex-wrap: wrap; }
-    .badge {
-      background: rgba(255,255,255,.6);
-      backdrop-filter: blur(4px);
-      border: 2px solid rgba(0,0,0,.1);
-      padding: 6px 12px; border-radius: 999px;
-      font-size: clamp(12px, 2.2vw, 16px);
-    }
-    .title {
-      position: absolute; bottom: 12px; left: 0; right: 0; text-align: center;
-      font-size: clamp(11px, 1.8vw, 13px);
-      color: rgba(31,41,55,.75);
-      pointer-events: none;
-    }
-    .overlay {
-      position: absolute; inset: 0;
-      display: grid; place-items: center;
-      background: rgba(0,0,0,.55);
-      color: #fff; text-align: center;
-      backdrop-filter: blur(2px);
-      transition: opacity .25s ease;
-    }
-    .overlay.hidden { opacity: 0; pointer-events: none; }
-    .card {
-      background: linear-gradient(160deg, #fff7e6, #ffe2b0);
-      color: #4a2a0a;
-      padding: 28px 36px;
-      border-radius: 18px;
-      box-shadow: 0 12px 30px rgba(0,0,0,.35);
-      max-width: 90%;
-      border: 4px solid #5b3a14;
-    }
-    .card h1 { margin: 0 0 6px; font-size: clamp(22px, 4.2vw, 36px); }
-    .card p  { margin: 4px 0; font-size: clamp(13px, 2.2vw, 16px); }
-    .keys { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
-    .key {
-      background: #fff; border: 2px solid #5b3a14; border-bottom-width: 4px;
-      padding: 6px 10px; border-radius: 8px; font-weight: 800; font-size: 13px;
-      min-width: 38px;
-    }
-    .btn {
-      display: inline-block; margin-top: 12px;
-      background: #ff8a3d; color: #fff;
-      border: none; border-bottom: 4px solid #c95c1a;
-      padding: 10px 22px; border-radius: 999px;
-      font-weight: 800; font-size: 15px; cursor: pointer;
-      transition: transform .08s ease;
-    }
-    .btn:active { transform: translateY(2px); border-bottom-width: 2px; }
-    .btn-alt {
-      background: #6a4fc9;
-      border-bottom-color: #4a2fa0;
-    }
-    .btn-alt:active { border-bottom-color: #4a2fa0; }
-    .credits {
-      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-      font-weight: 900; font-size: clamp(14px, 2.4vw, 18px);
-      color: #fff; text-shadow: 3px 3px 0 #5b3a14, -1px -1px 0 #5b3a14;
-      letter-spacing: 1px;
-      pointer-events: none;
-      white-space: nowrap;          /* never wrap onto a second line */
-      z-index: 2;
+    /* Show the touch bar on small screens OR on coarse-pointer touch devices */
+    @media (max-width: 720px), (hover: none) and (pointer: coarse) {
+      .touch { display: flex; }
     }
 
-    /* ===== Touch controls (mobile) =====
-       On mobile, the touch bar lives BELOW the game canvas in a dedicated
-       dark bar so the buttons never block gameplay. */
-    .touch {
-      position: relative;          /* sits below the stage in the flex column */
-      flex: 0 0 110px;             /* fixed bar height */
-      pointer-events: none;
-      display: none;
-      z-index: 5;
-      background: linear-gradient(180deg, rgba(30,40,55,.95) 0%, rgba(20,28,40,1) 100%);
-      box-shadow: 0 -8px 24px rgba(0,0,0,.4);
-      padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
-      padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
-      align-items: center; justify-content: space-between;
+    /* ═════════════════════════════════════════════════════════════════
+       ACCESSIBILITY — reduced motion + forced colors
+       The canvas-based gameplay is unaffected (it's the product); only
+       the page-chrome animations (transitions, transforms on UI) are
+       quieted.
+       ═════════════════════════════════════════════════════════════════ */
+    @media (prefers-reduced-motion: reduce) {
+      :where(.btn, .key, .tbtn, .overlay) {
+        transition: none;
+      }
+      :where(.btn:active, .key:active, .tbtn:active, .tbtn.pressed) {
+        transform: none;
+        border-bottom-width: var(--press-border-rest);
+      }
     }
-    .touch.show { display: flex; }
-    .pad {
-      display: flex; align-items: center; gap: 10px;
-      pointer-events: none;
+    @media (forced-colors: active) {
+      .btn, .tbtn, .key, .badge, .card {
+        border-color: CanvasText;
+      }
     }
-    .pad.right { gap: 8px; }
-    .tbtn {
-      pointer-events: auto;
-      -webkit-tap-highlight-color: transparent;
-      -webkit-user-select: none; user-select: none;
-      touch-action: none;
-      background: rgba(255,255,255,.92);
-      border: 3px solid #5b3a14;
-      border-bottom-width: 5px;
-      border-radius: 18px;
-      color: #4a2a0a;
-      font-weight: 900;
-      font-size: 26px;
-      display: grid; place-items: center;
-      width: 72px;
-      height: 72px;
-      transition: transform .05s ease, background .05s ease;
-      box-shadow: 0 4px 0 rgba(91,58,20,.35);
-    }
-    .tbtn:active,
-    .tbtn.pressed {
-      transform: translateY(3px);
-      border-bottom-width: 2px;
-      background: rgba(255,210,140,.95);
-    }
-    .tbtn.jump {
-      background: linear-gradient(180deg, #ffd86b, #ff9d2e);
-      color: #4a2a0a;
-      font-size: 18px; letter-spacing: 1px;
-    }
-    .tbtn.duck {
-      background: linear-gradient(180deg, #b6dcff, #6ba8e8);
-      color: #14304a;
-      font-size: 16px; letter-spacing: 1px;
-    }
-    .tbtn.pause {
-      width: 56px; height: 56px; font-size: 20px;
-      background: rgba(255,255,255,.15); color: #fff;
-      border-color: rgba(255,255,255,.4);
-      box-shadow: 0 3px 0 rgba(0,0,0,.4);
-    }
-    .touch-hint {
-      position: absolute; top: 4px; left: 0; right: 0; text-align: center;
-      color: rgba(255,255,255,.6); font-size: 10px; font-weight: 700;
-      letter-spacing: .5px;
-      pointer-events: none;
-    }
-    /* Show touch bar on touch devices or small screens */
-    @media (hover: none) and (pointer: coarse) { .touch { display: flex; } }
-    @media (max-width: 900px) { .touch { display: flex; } }
-    @media (min-width: 901px) { .touch { display: none; } }   /* desktop hides it */
   </style>
 </head>
 <body>
