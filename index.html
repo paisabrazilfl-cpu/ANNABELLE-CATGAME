@@ -289,17 +289,38 @@
       background: linear-gradient(180deg, var(--c-touch-jump-1), var(--c-touch-jump-2));
       color: var(--c-text-on-card);
       font-size: 16px; letter-spacing: 1px;
+      position: relative;
     }
+    /* 2026-08-11: jump-count chip on the JUMP button. Shows how many
+       jumps the cat has left. In endless mode the cat gets 3 total
+       (1 ground + 2 air = 3) and the chip counts down. In platform
+       mode the chip is hidden via display:none (single jump only). */
+    .jump-cnt {
+      position: absolute;
+      top: 2px; right: 4px;
+      font-size: 10px; font-weight: 900;
+      background: var(--c-brown-deep);
+      color: #fff;
+      padding: 1px 5px;
+      border-radius: var(--r-pill);
+      line-height: 1.1;
+      letter-spacing: 0;
+      box-shadow: var(--shadow-1);
+    }
+    .jump-cnt[data-air="0"] { opacity: .4; }
+    .jump-cnt[data-air="1"] { background: var(--c-touch-jump-2); }
+    .jump-cnt[data-air="2"] { background: #4ad17a; }    /* green = full charges */
+    .tbtn.jump.no-air .jump-cnt { display: none; }      /* platform mode: hide */
     .tbtn.duck {
       background: linear-gradient(180deg, var(--c-touch-duck-1), var(--c-touch-duck-2));
       color: var(--c-touch-duck-ink);
       font-size: 16px; letter-spacing: 1px;
     }
     .tbtn.pause {
-      width: 64px; height: 64px; font-size: 20px;
-      background: var(--c-pause-bg); color: var(--c-text-on-dark);
-      border-color: var(--c-pause-border);
-      box-shadow: var(--shadow-touch-down);
+      width: 64px; height: 64px; font-size: 18px; font-weight: 900;
+      background: rgba(255,255,255,.85); color: var(--c-brown-deep);
+      border-color: var(--c-brown);
+      box-shadow: var(--shadow-touch-up);
     }
     .touch-hint {
       position: absolute; top: var(--s-1); left: 0; right: 0; text-align: center;
@@ -398,7 +419,7 @@
           <div class="badge" id="speedBadge">Speed: 36</div>
         </div>
       </div>
-      <div class="title" id="hintBar">SPACE / ↑ = jump · ↓ = duck · A · D = run · jump on enemies to STOMP! · R = restart · ESC = pause</div>
+      <div class="title" id="hintBar">SPACE / ↑ = jump (3x in air!) · ↓ = duck · A · D = run · jump on enemies to STOMP! · R = restart · ESC = pause</div>
       <script>
         // Touch-device hint + start-button text swap. Runs after DOM ready.
         // Listens for overlay mutations so the swap also fires after the
@@ -420,6 +441,7 @@
           <p>Help the orange tabby outrun the neighborhood!</p>
           <p>Grab fish 🐟, dodge dogs 🐶, rocks 🪨 and birds 🐦.</p>
           <p><b>Jump ON an enemy to STOMP it!</b> +50 points 🐾</p>
+          <p>Endless mode: tap <b>JUMP</b> up to <b>3 times</b> in the air to clear dogs & rocks! 🐱</p>
           <div class="keys">
             <span class="key">SPACE</span>
             <span class="key">↑</span>
@@ -447,7 +469,7 @@
 
     <!-- On-screen touch controls (mobile / tablets). Sibling of stage, lives below it. -->
     <div class="touch" id="touchControls">
-      <div class="touch-hint">Tap buttons — ◀ ▶ run, JUMP, DUCK, II pause</div>
+      <div class="touch-hint">Tap ◀ ▶ to run · JUMP (×3 in air!) · DUCK · II pause</div>
       <div class="pad left">
         <button class="tbtn" data-key="arrowleft"  data-hold="1" aria-label="Move left">◀</button>
         <button class="tbtn" data-key="arrowright" data-hold="1" aria-label="Move right">▶</button>
@@ -455,7 +477,7 @@
       <div class="pad right">
         <button class="tbtn pause" data-key="escape" data-tap="1" aria-label="Pause">II</button>
         <button class="tbtn duck"  data-key="arrowdown" data-hold="1" aria-label="Duck">DUCK</button>
-        <button class="tbtn jump"  data-key=" "          data-tap="1"  aria-label="Jump">JUMP</button>
+        <button class="tbtn jump"  data-key=" "          data-tap="1"  aria-label="Jump">JUMP<span class="jump-cnt" id="jumpCnt">×3</span></button>
       </div>
     </div>
   </div>
@@ -773,9 +795,9 @@ const sfx = {
 };
 
 /* ---------- Game actions ---------- */
-function catJump() { if (cat.onGround) { cat.vy = -880; cat.onGround = false; sfx.jump(); cat.jumpsLeft = 0; } }   // bigger jump (was -780) — easier to clear gaps
+function catJump() { if (cat.onGround) { cat.vy = -1050; cat.onGround = false; sfx.jump(); cat.jumpsLeft = 0; } }   // 2026-08-11: bumped -880 → -1050 so the cat clears dogs/rocks. Peak ≈ 368 px (was 228 px).
 /* mid-air variable-jump: if you release jump while still rising, cut the velocity */
-function cutJump() { if (!cat.onGround && cat.vy < -250) cat.vy = -250; }   // cut higher now (was -200) for snappier control
+function cutJump() { if (!cat.onGround && cat.vy < -300) cat.vy = -300; }   // 2026-08-11: matched to new jump (was -250 / -200) for snappy mid-air control
 /* move cat left/right with air control. dir = -1 or +1. air = bool. */
 function catMove(dir, air) {
   const target = (air ? CAT_AIR_SPEED : CAT_GROUND_SPEED) * dir;
@@ -821,6 +843,9 @@ function reset() {
   cat.onGround = true; cat.duck = false;
   cat.facing = 1; cat.squash = 0; cat.invincible = 0;
   cat.wasOnGroundPlatform = 'floor';   // we start on the floor
+  // 2026-08-11: jumpsLeft depends on mode. Endless = 3-jump (1 ground + 2 air);
+  // platform = 1-jump (ground only, strategic).
+  cat.jumpsLeft = (world.mode === 'endless') ? 2 : 1;
   // mode-specific reset
   if (world.mode === 'platform') {
     loadLevel(world.level);
@@ -1044,7 +1069,7 @@ function updatePlatform(dt) {
   // is the climb key so it shouldn't kick the cat off the ladder)
   const spaceJump = keys.has(' ');
   if (world.onLadder && (leftHeld || rightHeld || (spaceJump && cat.vy <= 0))) {
-    if (spaceJump) cat.vy = -880; cat.jumpsLeft = 0;   // bigger jump (was -780) — easier to clear gaps
+    if (spaceJump) cat.vy = -1050; cat.jumpsLeft = 0;   // 2026-08-11: matches new catJump() (-880 → -1050)
     world.onLadder = null;
   }
 
@@ -1103,20 +1128,20 @@ function updatePlatform(dt) {
     if (cat.dropThroughTimer <= 0 && cat.jumpBuffer > 0 && canJump) {
       // platform mode = ground jump only. Endless mode has a separate
       // double-jump path in updateEndless.
-      cat.vy = -880; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;
+      cat.vy = -1050; cat.onGround = false; cat.coyoteTime = 0; cat.jumpBuffer = 0;
       sfx.jump();
     }
     // release jump cuts (variable jump height)
     if (cat.invincible <= 0) {
-      if (!jumpHeld && cat.vy < -250) cat.vy = -250;   // cut higher (was -200) for snappier control
+      if (!jumpHeld && cat.vy < -300) cat.vy = -300;   // 2026-08-11: matched to new jump (was -250 / -200)
     }
 
-    // gravity (with terminal velocity cap) — lighter now (was 2200+600) so
-    // jumps feel floatier and the kid has more air-control time.
+    // gravity (with terminal velocity cap) — lighter now (was 2200+600, then 1700+400)
+    // so jumps feel floatier and the kid has more air-control time.
     const _prevY = cat.y;
     if (!cat.onGround) {
-      let g = 1700;                      // base gravity (was 2200) — floatier
-      if (cat.vy > 400) g += 400;        // extra pull (was 600)
+      let g = 1500;                      // 2026-08-11: lighter again (1700 → 1500) to give the bigger -1050 jump a roomy arc
+      if (cat.vy > 400) g += 350;        // 2026-08-11: extra pull slightly less (was 400) so the fall feels lighter too
       cat.vy += g * dt;
       if (cat.vy > cat.terminalVel) cat.vy = cat.terminalVel;
       cat.y += cat.vy * dt;
@@ -1434,26 +1459,35 @@ let lastT = performance.now();
 function updateEndless(dt) {
   /* input */
   cat.duck = keys.has('arrowdown') || keys.has('s');
-  // Mario-style double jump in endless mode:
-  //   - ground jump (cat.onGround) → full -880 jump
-  //   - mid-air jump (cat.jumpsLeft > 0) → weaker -720 jump with white puff
+  // 2026-08-11: Mario-3-style TRIPLE jump in endless mode (was 2-jump).
+  //   - ground jump (cat.onGround) → full -1050 jump (catJump())
+  //   - air jump #1 (1st mid-air) → -880 (strong)
+  //   - air jump #2 (2nd mid-air) → -720 (weaker) with a small "!" feedback
+  //   Each air jump gets a different color puff so the kid can SEE which
+  //   jump they're on. After the 2nd air jump, cat.jumpsLeft = 0 and the
+  //   cat can't jump again until they land.
   const jumpKeyHeld = keys.has(' ') || keys.has('arrowup') || keys.has('w');
   if (jumpKeyHeld && cat.onGround) {
     catJump();
   } else if (jumpKeyHeld && !cat.onGround && cat.jumpsLeft > 0) {
-    // double jump
-    cat.vy = -720;
+    // air jump: 1st mid-air gets -880, 2nd mid-air gets -720
+    // cat.jumpsLeft is the # of remaining air jumps (resets to 2 on landing)
+    const isFirstAir = (cat.jumpsLeft === 2);
+    const isLastAir  = (cat.jumpsLeft === 1);
+    cat.vy = isFirstAir ? -880 : -720;
     cat.jumpsLeft--;
     sfx.jump();
-    // white puff particles around the cat
-    for (let i = 0; i < 8; i++) {
+    // puff: white for 1st, gold for 2nd (visual cue for the last air jump)
+    const puffColor = isFirstAir ? 'white' : 'gold';
+    for (let i = 0; i < (isLastAir ? 12 : 8); i++) {
       particles.push({
-        ...makeParticle(cat.x + cat.w/2, cat.y + cat.h/2, 'white'),
+        ...makeParticle(cat.x + cat.w/2, cat.y + cat.h/2, puffColor),
         vx: rand(-120, 120), vy: rand(-80, 40),
         life: rand(0.3, 0.5), max: 0.5,
-        s: rand(2, 4),
+        s: isLastAir ? rand(3, 5) : rand(2, 4),
       });
     }
+    if (isLastAir) popText('!', cat.x + cat.w/2 - 6, cat.y - 8, '#ff8a3d');
   }
   // release-jump: cut the jump short if you let go while still going up
   if (cat.invincible <= 0) {  // stomp bounce shouldn't be cut short
@@ -1465,8 +1499,9 @@ function updateEndless(dt) {
   const rightHeld = keys.has('arrowright') || keys.has('d');
   const moveDir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
   if (moveDir !== 0) catMove(moveDir, !cat.onGround);
-  // reset double-jump charges when the cat lands (Mario-style)
-  if (cat.onGround) cat.jumpsLeft = 1;
+  // 2026-08-11: reset TRIPLE-jump charges when the cat lands. 2 = 1 ground
+  // jump + 2 air jumps. Was 1 (1 ground + 1 air = 2-jump Mario).
+  if (cat.onGround) cat.jumpsLeft = 2;
 
   /* physics */
   cat.anim += dt * 14;
@@ -1476,8 +1511,10 @@ function updateEndless(dt) {
 
   // gravity (lighter while invincible for that floaty-bounce feel)
   // heavier when already falling fast for that "weight" feel
-  let grav = (cat.invincible > 0) ? 1100 : 2200;
-  if (cat.vy > 400) grav += 600;
+  // 2026-08-11: lighter (was 2200) so the new bigger -1050 jump has room
+  // to clear dogs + rocks. Peak with -1050 / 1500 = 367 px (was 250 px).
+  let grav = (cat.invincible > 0) ? 900 : 1500;
+  if (cat.vy > 400) grav += 350;
   // remember the previous-frame bottom of the cat for stomp detection
   // (must be sampled BEFORE we move it, otherwise the side-bump path always wins)
   const _prevY = cat.y;
@@ -1645,6 +1682,24 @@ function updateHUD() {
     speedEl.textContent = 'L' + world.level + ' ❤️' + world.lives + ' 🎯' + world.levelFish + '/' + world.levelGoal;
   } else {
     speedEl.textContent = 'Speed: ' + Math.floor(world.scrollSpeed / 10);
+  }
+  // 2026-08-11: jump-count chip on the JUMP touch button.
+  //   endless mode: 3 total (1 ground + 2 air), counts down as cat jumps
+  //   platform mode: 1 (ground only) — chip hidden via .no-air class
+  const jc = document.getElementById('jumpCnt');
+  const jb = document.querySelector('.tbtn.jump');
+  if (jc && jb) {
+    if (world.mode === 'endless') {
+      jb.classList.remove('no-air');
+      // remaining jumps including the ground jump
+      // cat.jumpsLeft = # of AIR jumps remaining (0..2)
+      // total = 1 (ground) + jumpsLeft
+      const total = 1 + cat.jumpsLeft;
+      jc.textContent = '×' + total;
+      jc.dataset.air = String(cat.jumpsLeft);
+    } else {
+      jb.classList.add('no-air');
+    }
   }
 }
 

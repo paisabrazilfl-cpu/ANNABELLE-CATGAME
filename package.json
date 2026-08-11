@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node serve.js",
     "play": "./PLAY.sh",
-    "smoke": "node smoke-mechanics.js && node smoke-platform.js && node smoke-mobile-fixed.js && node smoke-fall-physics.js && node smoke-gravity-bg.js && node smoke-mario.js && node smoke-gameover-race.js",
-    "smoke:all": "for f in smoke-mechanics.js smoke-platform.js smoke-mobile-fixed.js smoke-fall-physics.js smoke-gravity-bg.js smoke-mario.js smoke-gameover-race.js; do node \"$f\" || echo \"FAIL: $f\"; done",
+    "smoke": "node smoke-mechanics.js && node smoke-platform.js && node smoke-mobile-fixed.js && node smoke-fall-physics.js && node smoke-gravity-bg.js && node smoke-mario.js && node smoke-gameover-race.js && node smoke-jump-buff.js",
+    "smoke:all": "for f in smoke-mechanics.js smoke-platform.js smoke-mobile-fixed.js smoke-fall-physics.js smoke-gravity-bg.js smoke-mario.js smoke-gameover-race.js smoke-jump-buff.js; do node \"$f\" || echo \"FAIL: $f\"; done",
     "smoke:visual": "node smoke-snes-jungle.js",
     "smoke:live": "node smoke-live-snes.js",
     "smoke:http": "node smoke-http.js"
