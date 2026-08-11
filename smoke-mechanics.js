@@ -1,6 +1,6 @@
 // Smoke test for the Mario-style air-control + stomp mechanics.
 // Simulates: run left, run right, jump, jump onto an enemy, verify score/stomps.
-const { chromium } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium } = require('playwright');
 const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');

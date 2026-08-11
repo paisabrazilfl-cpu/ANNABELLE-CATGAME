@@ -466,7 +466,8 @@
 /* =========================================================================
    🐱 Annabelle's Cat Runner — single-file HTML5 canvas game
    - Kid-readable: lots of small named functions, plain variables
-   - One white-pixel texture stretched to draw everything (cheap + portable)
+   - Pure-pixel-art rendering: every sprite is a sequence of fillRect()
+     calls (no image assets, no texture atlas — works fully offline)
    - Web Audio synth (no asset files needed)
    - Mouse / touch / keyboard all supported
    ========================================================================= */
@@ -788,13 +789,31 @@ function startGame() {
   document.getElementById('overlay').classList.add('hidden');
   audio(); // unlock audio on user gesture
 }
-function restart() { reset(); world.started = true; world.over = false; document.getElementById('overlay').classList.add('hidden'); }
+function restart() {
+  // Cancel the pending game-over overlay reveal — restart() means the user
+  // doesn't want to see the Game Over card (see gameOver() for context).
+  if (_gameOverOverlayTimer) { clearTimeout(_gameOverOverlayTimer); _gameOverOverlayTimer = 0; }
+  reset();
+  world.started = true;
+  world.over = false;
+  document.getElementById('overlay').classList.add('hidden');
+}
 function reset() {
+  // Cancel any pending game-over overlay reveal — reset() runs at the
+  // start of every game and after every death, so canceling here means
+  // the setTimeout can never fire AFTER a fresh reset().
+  if (_gameOverOverlayTimer) { clearTimeout(_gameOverOverlayTimer); _gameOverOverlayTimer = 0; }
   world.scrollSpeed = world.baseScrollSpeed;
   world.distance = 0; world.fish = 0; world.stomps = 0;
   world.spawnTimer = 1.4; world.spawnInterval = 1.8;
   world.shake = 0; world.flash = 0;
   world.lives = 7;          // 7 lives (was 3) — very forgiving for kids
+  // clear platform-mode state too (F3 from the 2026-08-11 audit). Without
+  // this, switching from platform → endless leaves stale platforms / ladders
+  // / barrels in memory (they don't affect endless rendering, but they cost
+  // memory and could leak if a kid plays for hours).
+  platforms.length = 0; ladders.length = 0; levelItems.length = 0;
+  barrels.length = 0; goal = null; world.onLadder = null;
   obstacles.length = 0; pickups.length = 0;
   particles.length = 0; pops.length = 0;
   cat.x = 140; cat.y = GROUND_Y - 70;
@@ -1315,6 +1334,12 @@ function loseLife() {
   world.respawnMsg = 1.6;
 }
 
+// Track the pending "show game over overlay" timeout so restart() can cancel it.
+// Without this, pressing SPACE / R / "PLAY AGAIN" within 350ms of dying
+// would correctly start a new game, but then 250ms later the death animation's
+// deferred overlay-update fires anyway and slams a "Game Over" card back
+// over the running game. Fixed by clearing the timeout on restart().
+let _gameOverOverlayTimer = 0;
 function gameOver() {
   if (world.over) return;
   world.over = true;
@@ -1326,7 +1351,11 @@ function gameOver() {
     world.best = score;
     try { localStorage.setItem('annabelle-cat-best', String(score)); } catch (_) { /* private mode etc. */ }
   }
-  setTimeout(() => {
+  _gameOverOverlayTimer = setTimeout(() => {
+    _gameOverOverlayTimer = 0;
+    // If the user already restarted, reset() set world.over = false and
+    // startGame() hid the overlay. Don't undo that.
+    if (!world.over) return;
     const o = document.getElementById('overlay');
     o.classList.remove('hidden');
     o.querySelector('.card').innerHTML = `
