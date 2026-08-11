@@ -41,7 +41,7 @@ This repo is configured for Render as a **Node Web Service** (per the standing r
 - **`serve.js`** — tiny Node static server (Render web service entry point)
 - **`package.json`** — Node project manifest
 - **`render.yaml`** — Render Web Service spec (documentation; service is created from the dashboard, not via Blueprint)
-- **`smoke-*.js`** — Playwright headless smoke tests covering mechanics, platform mode, mobile controls, fall physics, gravity, Mario-style features, and live visual regression
+- **`smoke-*.js`** — Playwright headless smoke tests covering mechanics, platform mode, mobile controls, fall physics, gravity, Mario-style features, game-over race conditions, and live visual regression
 - **`bootstrap.sh`** — one-shot GitHub create+push script
 
 The whole game is in one HTML file you can read top-to-bottom. The cat sprite is hand-drawn pixel art on a `<canvas>`. The SNES-jungle background, mountain characters that wave at the player, and the level banners are all built from rectangles — no image files.
