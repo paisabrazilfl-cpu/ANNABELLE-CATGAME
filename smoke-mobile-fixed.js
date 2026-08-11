@@ -1,6 +1,6 @@
 // Mobile screenshot test: render the page at iPhone 12 size and capture
 // both the start screen and mid-game to verify the layout is clean.
-const { chromium, devices } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium, devices } = require('playwright');
 const http = require('http');
 const { spawn } = require('child_process');
 

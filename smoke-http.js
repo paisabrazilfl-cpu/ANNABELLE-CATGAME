@@ -1,4 +1,4 @@
-const { chromium } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch({
     headless: true,

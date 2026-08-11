@@ -1,6 +1,6 @@
 // Visual regression: mountain characters (waving) in platform mode.
 // Spawns its own local server so it can be run from any directory.
-const { chromium } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium } = require('playwright');
 const http = require('http');
 const { spawn } = require('child_process');
 const path = require('path');

@@ -1,6 +1,6 @@
 // Visual regression: difficulty-easing features in platform mode
 // (LEVEL banner, checkpoints, respawn message). Spawns its own local server.
-const { chromium } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium } = require('playwright');
 const http = require('http');
 const { spawn } = require('child_process');
 const path = require('path');

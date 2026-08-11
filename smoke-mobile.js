@@ -1,6 +1,6 @@
 // Mobile smoke test: emulate a phone viewport, exercise touch buttons, verify
 // the cat moves with simulated taps on the on-screen D-pad and JUMP.
-const { chromium, devices } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium, devices } = require('playwright');
 const http = require('http');
 
 async function waitForServer(port, timeout = 5000) {

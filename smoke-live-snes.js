@@ -1,5 +1,5 @@
 // Live verification: SNES-jungle graphics + gravity on Render URL
-const { chromium } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium } = require('playwright');
 (async () => {
   const URL = 'https://annabelle-catgame.onrender.com';
   const browser = await chromium.launch({

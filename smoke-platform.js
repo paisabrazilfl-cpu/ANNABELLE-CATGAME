@@ -1,5 +1,5 @@
 // Platform-mode smoke test
-const { chromium, devices } = require('/usr/local/lib/node_modules/playwright/index.js');
+const { chromium, devices } = require('playwright');
 const http = require('http');
 const { spawn } = require('child_process');
 
